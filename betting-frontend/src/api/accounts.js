@@ -26,3 +26,31 @@ export const deleteAccount = async (id) => {
   const response = await axios.delete(`${BASE_URL}/${id}`);
   return response.data;
 };
+
+export const subscribeToAccountEvents = (onAccountCreated, onPing) => {
+  const eventSource = new EventSource("/sse");
+
+  eventSource.onopen = () => {
+    console.log("✅ Connected to SSE stream");
+  };
+
+  eventSource.onerror = (err) => {
+    console.error("❌ SSE error:", err);
+    // You can choose to close or reconnect here
+  };
+
+  eventSource.addEventListener("account_created", (event) => {
+    const account = JSON.parse(event.data);
+    if (onAccountCreated) {
+      onAccountCreated(account);
+    }
+  });
+
+  eventSource.addEventListener("ping", (event) => {
+    if (onPing) {
+      onPing(event.data);
+    }
+  });
+
+  return eventSource; // Return so the caller can close it if needed
+};
