@@ -15,46 +15,50 @@ export default function AccountManager() {
   };
 
   // SSE listener
-  useEffect(() => {
-    const eventSource = new EventSource("http://localhost:3001/sse");
+useEffect(() => {
+  const eventSource = new EventSource("http://localhost:3001/sse");
 
-    eventSource.addEventListener("account_created", (event) => {
-      try {
-        const account = JSON.parse(event.data);
+  eventSource.addEventListener("account_created", (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      const { account_id, account_name, account_hostname } = data;
 
-        // Add new account if not already present
-        setAccounts((prev) => {
-          const exists = prev.some(acc => acc.id === account.id);
-          if (exists) return prev;
-          return [...prev, account];
-        });
+      // Add new account if not already present
+      setAccounts((prev) => {
+        const exists = prev.some(acc => acc.id === account_id);
+        if (exists) return prev;
+        return [
+          ...prev,
+          {
+            id: account_id,
+            name: account_name,
+            hostname: account_hostname,
+            created_at: "",   // Or set actual value if available
+            updated_at: "",   // Or set actual value if available
+          },
+        ];
+      });
+    } catch (err) {
+      console.error("Failed to parse account_created SSE data", err);
+    }
+  });
 
-      } catch (err) {
-        console.error("Failed to parse SSE data", err);
-      }
-    });
+  eventSource.addEventListener("account_deleted", (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      const { account_id } = data;
 
-    eventSource.addEventListener("account_deleted", (event) => {
-      try {
-        const deletedAccount = JSON.parse(event.data);
+      // Remove the deleted account
+      setAccounts((prev) => prev.filter(acc => acc.id !== account_id));
+    } catch (err) {
+      console.error("Failed to parse account_deleted SSE data", err);
+    }
+  });
 
-        // Remove deleted account from state
-        setAccounts((prev) => prev.filter(acc => acc.id !== deletedAccount.id));
-
-      } catch (err) {
-        console.error("Failed to parse SSE data", err);
-      }
-    });
-
-    eventSource.onerror = (error) => {
-      console.error("SSE connection error:", error);
-      eventSource.close();
-    };
-
-    return () => {
-      eventSource.close();
-    };
-  }, []);
+  return () => {
+    eventSource.close();
+  };
+}, []);
 
   return (
     <div style={{

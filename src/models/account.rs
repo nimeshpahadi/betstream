@@ -31,6 +31,8 @@ pub struct BrokerEvent {
     pub id: Option<i64>,
     pub pk: Option<i64>,
     pub account_id: Option<i64>,
+    pub account_name: Option<String>,
+    pub account_hostname: Option<String>,
     // pub batch_id: Option<i64>,
     // pub bet_id: Option<i64>,
     pub event: String,
