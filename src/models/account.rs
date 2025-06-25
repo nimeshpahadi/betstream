@@ -61,6 +61,20 @@ pub struct Batch {
     pub account_id: i64,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateBatchRequest {
+    pub meta: JsonValue,
+    pub bets: Vec<CreateBetRequest>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateBetRequest {
+    pub id: i64,
+    pub selection: String,
+    pub stake: f64,
+    pub cost: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Bet {
     pub id: i64,
@@ -91,9 +105,21 @@ pub struct BetData {
     pub cost: f64,
 }
 
+// #[derive(Debug, Serialize)]
+// pub struct BatchResponse {
+//     #[serde(flatten)]
+//     pub batch: Batch,
+//     pub bets: Vec<Bet>,
+// }
+
 #[derive(Debug, Serialize)]
 pub struct BatchResponse {
-    #[serde(flatten)]
-    pub batch: Batch,
+    pub id: i64,
+    pub completed: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub meta: JsonValue,
+    pub account_id: i64,
     pub bets: Vec<Bet>,
+    // pub bets: Vec<super::bet::Bet>,
 }

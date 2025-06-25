@@ -13,7 +13,13 @@ use sqlx::SqlitePool;
 use std::{convert::Infallible, time::Duration};
 use tokio::sync::broadcast;
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
-use crate::models::account::{BatchUpload, BatchResponse};
+use crate::models::account::{
+    BatchUpload,
+    BatchResponse,
+    CreateBatchRequest,
+    Batch,
+    Bet
+};
 
 // Event structure similar to your Go broker.Event
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,7 +29,7 @@ pub struct BrokerEvent {
     pub account_id: Option<i64>,
     pub account_name: Option<String>,
     pub account_hostname: Option<String>,
-    // pub batch_id: Option<i64>,
+    pub batch_id: Option<i64>,
     // pub bet_id: Option<i64>,
     pub event: String,
 }
@@ -149,8 +155,7 @@ pub async fn create_account(
         account_id: Some(account.id),
         account_name: Some(account.name.clone()),
         account_hostname: Some(account.hostname.clone()),
-        // batch_id: None,
-        // bet_id: None,
+        batch_id: None,
         event: "account_created".to_string(),
     };
 
@@ -198,7 +203,7 @@ pub async fn update_account(
         account_id: Some(account.id),
         account_name: Some(account.name.clone()),
         account_hostname: Some(account.hostname.clone()),
-        // batch_id: None,
+        batch_id: None,
         // bet_id: None,
         event: "account_updated".to_string(),
     };
@@ -235,7 +240,7 @@ pub async fn delete_account(
         account_id: Some(account_id),
         account_name: None,
         account_hostname: None,
-        // batch_id: None,
+        batch_id: None,
         // bet_id: None,
         event: "account_deleted".to_string(),
     };
@@ -251,8 +256,21 @@ pub async fn delete_account(
 pub async fn create_batch(
     Path(account_id): Path<i64>,
     State(state): State<AppState>,
-    Json(upload_batch): Json<BatchUpload>,
-) -> Result<Json<BatchResponse>, (StatusCode, String)> {
+    JsonExtract(payload): JsonExtract<CreateBatchRequest>,
+) -> Result<Json<BatchResponse>, StatusCode> {
+    
+    // Start transaction
+    let mut tx = state.pool.begin().await.map_err(|e| {
+        eprintln!("Transaction error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Create batch
+    let meta_json = serde_json::to_string(&payload.meta).map_err(|e| {
+        eprintln!("JSON serialization error: {}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+
     let batch = sqlx::query_as::<_, Batch>(
         r#"
         INSERT INTO batches (meta, account_id, created_at, updated_at)
@@ -260,20 +278,54 @@ pub async fn create_batch(
         RETURNING *
         "#,
     )
-    .bind(&upload_batch)
-    .fetch_one(&state.pool)
+    .bind(&meta_json)
+    .bind(account_id)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("Database error: {}", e);
+        eprintln!("Database error creating batch: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    // Create bets
+    let mut bets = Vec::new();
+    for bet_request in payload.bets {
+        let bet = sqlx::query_as::<_, Bet>(
+            r#"
+            INSERT INTO bets (id, selection, stake, cost, batch_id)
+            VALUES (?, ?, ?, ?, ?)
+            RETURNING *
+            "#,
+        )
+        .bind(bet_request.id)
+        .bind(&bet_request.selection)
+        .bind(bet_request.stake)
+        .bind(bet_request.cost)
+        .bind(batch.id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| {
+            eprintln!("Database error creating bet: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+        bets.push(bet);
+    }
+
+    // Commit transaction
+    tx.commit().await.map_err(|e| {
+        eprintln!("Transaction commit error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Publish event
     let event = BrokerEvent {
         id: Some(chrono::Utc::now().timestamp_millis()),
         pk: Some(batch.id),
         account_id: Some(account_id),
+        account_name: None,
+        account_hostname: None,
         batch_id: Some(batch.id),
-        // bet_id: None,
+        // bet_id: Some(bet.id),
         event: "batch_created".to_string(),
     };
 
@@ -282,5 +334,22 @@ pub async fn create_batch(
         eprintln!("Failed to send event: {}", e);
     }
 
-    Ok(Json(batch))
+    let meta_parsed = batch.meta.clone();
+
+    let response = BatchResponse {
+        id: batch.id,
+        completed: batch.completed,
+        created_at: batch.created_at.to_rfc3339(),
+        updated_at: batch.updated_at.to_rfc3339(),
+        meta: meta_parsed,
+        account_id: batch.account_id,
+        bets,
+    };
+
+    println!(
+        "Batch created - ID: {}, Account: {}, Bets: {}",
+        response.id, response.account_id, response.bets.len()
+    );
+
+    Ok(Json(response))
 }
