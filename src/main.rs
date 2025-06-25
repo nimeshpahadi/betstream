@@ -9,7 +9,16 @@ use sqlx::sqlite::SqlitePool;
 use std::env;
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::fmt::init;
-use handlers::accounts::{create_account, update_account, get_accounts, get_account, delete_account, sse_handler, AppState};
+use handlers::accounts::{
+    create_account,
+    update_account,
+    get_accounts,
+    get_account,
+    delete_account,
+    create_batch,
+    sse_handler,
+    AppState
+};
 use tokio::sync::broadcast;
 
 #[tokio::main]
@@ -19,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Get database URL from environment or use default SQLite file
     let database_url = env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "sqlite:./manual-betting-server.db".to_string());
+        .unwrap_or_else(|_| "sqlite:./manual-betting-server.db?mode=rwc".to_string());
 
     // Create database connection pool with create_if_missing option
     let pool = SqlitePool::connect(&database_url)
@@ -45,6 +54,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/accounts/:id", get(get_account))
         .route("/api/v1/accounts/:id", put(update_account))
         .route("/api/v1/accounts/:id", delete(delete_account))
+        .route("/api/v1/accounts/:id/batches", post(create_batch))
+        // .route("/api/v1/accounts/:id/batches/:batch_id", delete(delete_account_batch))
+        // .route("/api/v1/accounts/:id/batches", get(account_batches))
+        // .route("/api/v1/accounts/:id/batches/:batch_id", get(account_batch))
         .route("/sse", get(sse_handler))
         .layer(
             CorsLayer::new()

@@ -13,6 +13,7 @@ use sqlx::SqlitePool;
 use std::{convert::Infallible, time::Duration};
 use tokio::sync::broadcast;
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
+use crate::models::account::{BatchUpload, BatchResponse};
 
 // Event structure similar to your Go broker.Event
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -214,7 +215,6 @@ pub async fn update_account(
     Ok(Json(account))
 }
 
-// Similar implementation for delete account
 pub async fn delete_account(
     State(state): State<AppState>,
     axum::extract::Path(account_id): axum::extract::Path<i64>,
@@ -246,4 +246,41 @@ pub async fn delete_account(
 
     println!("Account deleted - ID: {}", account_id);
     Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn create_batch(
+    Path(account_id): Path<i64>,
+    State(state): State<AppState>,
+    Json(upload_batch): Json<BatchUpload>,
+) -> Result<Json<BatchResponse>, (StatusCode, String)> {
+    let batch = sqlx::query_as::<_, Batch>(
+        r#"
+        INSERT INTO batches (meta, account_id, created_at, updated_at)
+        VALUES (?, ?, datetime('now'), datetime('now'))
+        RETURNING *
+        "#,
+    )
+    .bind(&upload_batch)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let event = BrokerEvent {
+        id: Some(chrono::Utc::now().timestamp_millis()),
+        pk: Some(batch.id),
+        account_id: Some(account_id),
+        batch_id: Some(batch.id),
+        // bet_id: None,
+        event: "batch_created".to_string(),
+    };
+
+    // Send event to all SSE subscribers
+    if let Err(e) = state.event_sender.send(event) {
+        eprintln!("Failed to send event: {}", e);
+    }
+
+    Ok(Json(batch))
 }
