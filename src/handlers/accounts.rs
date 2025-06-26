@@ -353,3 +353,65 @@ pub async fn create_batch(
 
     Ok(Json(response))
 }
+
+pub async fn account_batches(
+    Path(account_id): Path<i64>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<BatchResponse>>, StatusCode> {
+    
+    // Get all batches for the account
+    let batches = sqlx::query_as::<_, Batch>(
+        r#"
+        SELECT * FROM batches 
+        WHERE account_id = ? 
+        ORDER BY created_at DESC
+        "#,
+    )
+    .bind(account_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error fetching batches: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let mut batch_responses = Vec::new();
+
+    // For each batch, get its associated bets
+    for batch in batches {
+        let bets = sqlx::query_as::<_, Bet>(
+            r#"
+            SELECT * FROM bets 
+            WHERE batch_id = ? 
+            ORDER BY id
+            "#,
+        )
+        .bind(batch.id)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Database error fetching bets for batch {}: {}", batch.id, e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        let response = BatchResponse {
+            id: batch.id,
+            completed: batch.completed,
+            created_at: batch.created_at.to_rfc3339(),
+            updated_at: batch.updated_at.to_rfc3339(),
+            meta: batch.meta.clone(),
+            account_id: batch.account_id,
+            bets,
+        };
+
+        batch_responses.push(response);
+    }
+
+    println!(
+        "Retrieved {} batches for account {}",
+        batch_responses.len(), 
+        account_id
+    );
+
+    Ok(Json(batch_responses))
+}

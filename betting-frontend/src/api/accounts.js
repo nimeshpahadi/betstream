@@ -7,6 +7,11 @@ export const getAccounts = async () => {
   return response.data;
 };
 
+export const getAccountBatches = async (accountId) => {
+  const response = await axios.get(`${BASE_URL}/${accountId}/batches`);
+  return response.data;
+};
+
 export const createAccount = async (account) => {
   const response = await axios.post(BASE_URL, account);
   return response.data;

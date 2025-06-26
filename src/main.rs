@@ -16,6 +16,7 @@ use handlers::accounts::{
     get_account,
     delete_account,
     create_batch,
+    account_batches,
     sse_handler,
     AppState
 };
@@ -56,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/accounts/:id", delete(delete_account))
         .route("/api/v1/accounts/:id/batches", post(create_batch))
         // .route("/api/v1/accounts/:id/batches/:batch_id", delete(delete_account_batch))
-        // .route("/api/v1/accounts/:id/batches", get(account_batches))
+        .route("/api/v1/accounts/:id/batches", get(account_batches))
         // .route("/api/v1/accounts/:id/batches/:batch_id", get(account_batch))
         .route("/sse", get(sse_handler))
         .layer(
