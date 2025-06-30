@@ -1,15 +1,48 @@
 import { useState, useEffect } from 'react';
-import { User, Calendar, Clock, DollarSign, Target, Trophy, AlertCircle } from 'lucide-react';
-import { getAccount, getAccountBatches } from '../api/accounts';
+import {
+  User, Calendar, Clock, DollarSign, Target, Trophy, AlertCircle
+} from 'lucide-react';
+import {
+  getAccounts, getAccount, getAccountBatches, subscribeToAccountEvents
+} from '../api/accounts';
 
-export default function AccountBatchesUI({ accountId = 1 }) {
+export default function AccountBatchesUI() {
+  const [accounts, setAccounts] = useState([]);
+  const [accountId, setAccountId] = useState(null);
   const [batches, setBatches] = useState([]);
   const [account, setAccount] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [selectedBatch, setSelectedBatch] = useState(null);
+  const [error, setError] = useState(null);
 
+  // Fetch all accounts initially
   useEffect(() => {
+    const loadInitialAccounts = async () => {
+      try {
+        const data = await getAccounts();
+        setAccounts(data);
+        if (data.length > 0) {
+          setAccountId(data[0].id);
+        }
+      } catch (err) {
+        setError('Failed to load accounts');
+      }
+    };
+    loadInitialAccounts();
+
+    // Subscribe to new account events
+    const es = subscribeToAccountEvents((newAccount) => {
+      setAccounts((prev) => [...prev, newAccount]);
+      setAccountId(newAccount.id); // Auto-switch to new account
+    });
+
+    return () => es.close();
+  }, []);
+
+  // Load account and its batches when accountId changes
+  useEffect(() => {
+    if (!accountId) return;
+
     const fetchData = async () => {
       try {
         setLoading(true);
@@ -20,7 +53,7 @@ export default function AccountBatchesUI({ accountId = 1 }) {
         ]);
         setAccount(accountData);
         setBatches(batchesData);
-        if (batchesData.length > 0) setSelectedBatch(batchesData[0]);
+        setSelectedBatch(batchesData[0] || null);
       } catch (err) {
         console.error(err);
         setError('Failed to load account and batch data');
@@ -32,7 +65,6 @@ export default function AccountBatchesUI({ accountId = 1 }) {
   }, [accountId]);
 
   const formatDate = (dateString) => new Date(dateString).toLocaleString('en-US');
-
   const calculateTotalStake = (bets) =>
     bets.reduce((sum, bet) => sum + (bet.stake || 0), 0).toFixed(2);
 
@@ -58,58 +90,83 @@ export default function AccountBatchesUI({ accountId = 1 }) {
 
         {/* Sidebar */}
         <aside className="bg-gray-800 p-4 rounded-xl border border-gray-700">
-          <div className="flex items-center space-x-4 mb-6">
-            <div className="bg-blue-600 p-2 rounded-full">
-              <User className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h2 className="font-semibold">{account?.name}</h2>
-              <p className="text-sm text-gray-400">{account?.email || `ID: ${accountId}`}</p>
-            </div>
-          </div>
-
-          <div className="text-sm text-gray-300 space-y-2 mb-6">
-            <p>Total Batches: <span className="font-semibold text-white">{batches.length}</span></p>
-            <p>Active: <span className="text-orange-400">{batches.filter(b => !b.completed).length}</span></p>
-            <p>Completed: <span className="text-green-400">{batches.filter(b => b.completed).length}</span></p>
-          </div>
-
-          <div>
-            <h3 className="text-sm text-gray-300 mb-2">Select Batch</h3>
+          {/* Account List */}
+          <div className="mb-6">
+            <h3 className="text-sm text-gray-300 mb-2">Accounts</h3>
             <ul className="space-y-2">
-              {batches.map((batch) => (
-                <li key={batch.id}>
+              {accounts.map((acc) => (
+                <li key={acc.id}>
                   <button
                     className={`w-full text-left p-2 rounded-md border ${
-                      selectedBatch?.id === batch.id
+                      accountId === acc.id
                         ? 'bg-blue-900/50 border-blue-400 text-blue-200'
                         : 'border-gray-600 text-gray-300 hover:bg-gray-700/50'
                     }`}
-                    onClick={() => setSelectedBatch(batch)}
+                    onClick={() => setAccountId(acc.id)}
                   >
-                    <div className="flex justify-between items-center">
-                      <span>{batch.meta?.name || `Batch ${batch.id}`}</span>
-                      {batch.completed ? (
-                        <Trophy className="w-4 h-4 text-green-400" />
-                      ) : (
-                        <Clock className="w-4 h-4 text-orange-400" />
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-400">
-                      {batch.bets?.length || 0} bets • ${calculateTotalStake(batch.bets || [])}
-                    </p>
+                    {acc.name || `Account ${acc.id}`}
                   </button>
                 </li>
               ))}
             </ul>
           </div>
+
+          {/* Account Info */}
+          {account && (
+            <>
+              <div className="flex items-center space-x-4 mb-6">
+                <div className="bg-blue-600 p-2 rounded-full">
+                  <User className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="font-semibold">{account?.name}</h2>
+                  <p className="text-sm text-gray-400">
+                    {account?.email || `ID: ${account.id}`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-sm text-gray-300 space-y-2 mb-6">
+                <p>Total Batches: <span className="font-semibold text-white">{batches.length}</span></p>
+                <p>Active: <span className="text-orange-400">{batches.filter(b => !b.completed).length}</span></p>
+                <p>Completed: <span className="text-green-400">{batches.filter(b => b.completed).length}</span></p>
+              </div>
+
+              <h3 className="text-sm text-gray-300 mb-2">Select Batch</h3>
+              <ul className="space-y-2">
+                {batches.map((batch) => (
+                  <li key={batch.id}>
+                    <button
+                      className={`w-full text-left p-2 rounded-md border ${
+                        selectedBatch?.id === batch.id
+                          ? 'bg-blue-900/50 border-blue-400 text-blue-200'
+                          : 'border-gray-600 text-gray-300 hover:bg-gray-700/50'
+                      }`}
+                      onClick={() => setSelectedBatch(batch)}
+                    >
+                      <div className="flex justify-between items-center">
+                        <span>{batch.meta?.name || `Batch ${batch.id}`}</span>
+                        {batch.completed ? (
+                          <Trophy className="w-4 h-4 text-green-400" />
+                        ) : (
+                          <Clock className="w-4 h-4 text-orange-400" />
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-400">
+                        {batch.bets?.length || 0} bets • ${calculateTotalStake(batch.bets || [])}
+                      </p>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </aside>
 
         {/* Batch Section */}
         <section className="lg:col-span-3 space-y-6">
           {selectedBatch && (
             <>
-              {/* Metadata */}
               <div className="bg-gray-800 rounded-xl border border-gray-700 p-4">
                 <div className="flex justify-between items-center mb-4">
                   <h1 className="text-xl font-bold">{selectedBatch.meta?.name || `Batch ${selectedBatch.id}`}</h1>
