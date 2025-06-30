@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   User, Calendar, Clock, DollarSign, Target, Trophy, AlertCircle
 } from 'lucide-react';
@@ -15,7 +15,11 @@ export default function AccountBatchesUI() {
   const [selectedBatch, setSelectedBatch] = useState(null);
   const [error, setError] = useState(null);
 
-  // Fetch all accounts initially
+  const accountIdRef = useRef(accountId);
+  useEffect(() => {
+    accountIdRef.current = accountId;
+  }, [accountId]);
+
   useEffect(() => {
     const loadInitialAccounts = async () => {
       try {
@@ -28,43 +32,75 @@ export default function AccountBatchesUI() {
         setError('Failed to load accounts');
       }
     };
+
     loadInitialAccounts();
 
-    // Subscribe to new account events
-    const es = subscribeToAccountEvents((newAccount) => {
-      setAccounts((prev) => [...prev, newAccount]);
-      setAccountId(newAccount.id); // Auto-switch to new account
-    });
+    const es = subscribeToAccountEvents(
+      (newAccount) => {
+        setAccounts((prev) => {
+          const exists = prev.some(acc => acc.id === newAccount.id);
+          return exists ? prev : [...prev, newAccount];
+        });
+      },
+      (deletedId) => {
+        setAccounts((prev) => {
+          const filtered = prev.filter(acc => acc.id !== deletedId);
+          setAccountId((prevId) =>
+            prevId === deletedId ? (filtered[0]?.id ?? null) : prevId
+          );
+          return filtered;
+        });
+      },
+      (batchAccountId) => {
+        if (batchAccountId === accountIdRef.current) {
+          getAccountBatches(accountIdRef.current)
+            .then((batchesData) => {
+              setBatches(batchesData);
+              setSelectedBatch(batchesData[0] || null);
+            })
+            .catch((err) => {
+              console.error("Failed to reload batches after batch_created", err);
+            });
+        }
+      },
+      (ping) => {
+        console.log("💓 Ping:", ping);
+      }
+    );
 
     return () => es.close();
   }, []);
 
-  // Load account and its batches when accountId changes
   useEffect(() => {
     if (!accountId) return;
 
     const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+
       try {
-        setLoading(true);
-        setError(null);
         const [accountData, batchesData] = await Promise.all([
           getAccount(accountId),
-          getAccountBatches(accountId)
+          getAccountBatches(accountId),
         ]);
+
         setAccount(accountData);
-        setBatches(batchesData);
-        setSelectedBatch(batchesData[0] || null);
+        setBatches(Array.isArray(batchesData) ? batchesData : []);
+        setSelectedBatch(
+          Array.isArray(batchesData) && batchesData.length > 0 ? batchesData[0] : null
+        );
       } catch (err) {
-        console.error(err);
-        setError('Failed to load account and batch data');
+        console.error("Data fetch error:", err);
+        setError("Failed to load account and batch data");
       } finally {
         setLoading(false);
       }
     };
+
     fetchData();
   }, [accountId]);
 
-  const formatDate = (dateString) => new Date(dateString).toLocaleString('en-US');
+  const formatDate = (dateString) => new Date(dateString).toLocaleString("en-US");
   const calculateTotalStake = (bets) =>
     bets.reduce((sum, bet) => sum + (bet.stake || 0), 0).toFixed(2);
 
@@ -87,10 +123,8 @@ export default function AccountBatchesUI() {
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6">
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-
         {/* Sidebar */}
         <aside className="bg-gray-800 p-4 rounded-xl border border-gray-700">
-          {/* Account List */}
           <div className="mb-6">
             <h3 className="text-sm text-gray-300 mb-2">Accounts</h3>
             <ul className="space-y-2">
@@ -99,8 +133,8 @@ export default function AccountBatchesUI() {
                   <button
                     className={`w-full text-left p-2 rounded-md border ${
                       accountId === acc.id
-                        ? 'bg-blue-900/50 border-blue-400 text-blue-200'
-                        : 'border-gray-600 text-gray-300 hover:bg-gray-700/50'
+                        ? "bg-blue-900/50 border-blue-400 text-blue-200"
+                        : "border-gray-600 text-gray-300 hover:bg-gray-700/50"
                     }`}
                     onClick={() => setAccountId(acc.id)}
                   >
@@ -111,7 +145,6 @@ export default function AccountBatchesUI() {
             </ul>
           </div>
 
-          {/* Account Info */}
           {account && (
             <>
               <div className="flex items-center space-x-4 mb-6">
@@ -119,17 +152,30 @@ export default function AccountBatchesUI() {
                   <User className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h2 className="font-semibold">{account?.name}</h2>
+                  <h2 className="font-semibold">{account.name}</h2>
                   <p className="text-sm text-gray-400">
-                    {account?.email || `ID: ${account.id}`}
+                    {account.email || `ID: ${account.id}`}
                   </p>
                 </div>
               </div>
 
               <div className="text-sm text-gray-300 space-y-2 mb-6">
-                <p>Total Batches: <span className="font-semibold text-white">{batches.length}</span></p>
-                <p>Active: <span className="text-orange-400">{batches.filter(b => !b.completed).length}</span></p>
-                <p>Completed: <span className="text-green-400">{batches.filter(b => b.completed).length}</span></p>
+                <p>
+                  Total Batches:{" "}
+                  <span className="font-semibold text-white">{batches.length}</span>
+                </p>
+                <p>
+                  Active:{" "}
+                  <span className="text-orange-400">
+                    {batches.filter((b) => !b.completed).length}
+                  </span>
+                </p>
+                <p>
+                  Completed:{" "}
+                  <span className="text-green-400">
+                    {batches.filter((b) => b.completed).length}
+                  </span>
+                </p>
               </div>
 
               <h3 className="text-sm text-gray-300 mb-2">Select Batch</h3>
@@ -139,8 +185,8 @@ export default function AccountBatchesUI() {
                     <button
                       className={`w-full text-left p-2 rounded-md border ${
                         selectedBatch?.id === batch.id
-                          ? 'bg-blue-900/50 border-blue-400 text-blue-200'
-                          : 'border-gray-600 text-gray-300 hover:bg-gray-700/50'
+                          ? "bg-blue-900/50 border-blue-400 text-blue-200"
+                          : "border-gray-600 text-gray-300 hover:bg-gray-700/50"
                       }`}
                       onClick={() => setSelectedBatch(batch)}
                     >
@@ -153,7 +199,8 @@ export default function AccountBatchesUI() {
                         )}
                       </div>
                       <p className="text-xs text-gray-400">
-                        {batch.bets?.length || 0} bets • ${calculateTotalStake(batch.bets || [])}
+                        {batch.bets?.length || 0} bets • $
+                        {calculateTotalStake(batch.bets || [])}
                       </p>
                     </button>
                   </li>
@@ -169,13 +216,17 @@ export default function AccountBatchesUI() {
             <>
               <div className="bg-gray-800 rounded-xl border border-gray-700 p-4">
                 <div className="flex justify-between items-center mb-4">
-                  <h1 className="text-xl font-bold">{selectedBatch.meta?.name || `Batch ${selectedBatch.id}`}</h1>
-                  <span className={`px-3 py-1 text-sm rounded-full border ${
-                    selectedBatch.completed
-                      ? 'text-green-300 border-green-600 bg-green-900/20'
-                      : 'text-orange-300 border-orange-600 bg-orange-900/20'
-                  }`}>
-                    {selectedBatch.completed ? 'Completed' : 'Active'}
+                  <h1 className="text-xl font-bold">
+                    {selectedBatch.meta?.name || `Batch ${selectedBatch.id}`}
+                  </h1>
+                  <span
+                    className={`px-3 py-1 text-sm rounded-full border ${
+                      selectedBatch.completed
+                        ? "text-green-300 border-green-600 bg-green-900/20"
+                        : "text-orange-300 border-orange-600 bg-orange-900/20"
+                    }`}
+                  >
+                    {selectedBatch.completed ? "Completed" : "Active"}
                   </span>
                 </div>
 
@@ -190,12 +241,13 @@ export default function AccountBatchesUI() {
                   </div>
                   <div className="flex items-center space-x-2">
                     <DollarSign className="w-4 h-4" />
-                    <span>Total Stake: ${calculateTotalStake(selectedBatch.bets || [])}</span>
+                    <span>
+                      Total Stake: ${calculateTotalStake(selectedBatch.bets || [])}
+                    </span>
                   </div>
                 </div>
               </div>
 
-              {/* Bets Table */}
               <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-x-auto">
                 <table className="min-w-full text-sm text-left">
                   <thead className="bg-gray-700 text-gray-300 uppercase">
@@ -208,7 +260,10 @@ export default function AccountBatchesUI() {
                   </thead>
                   <tbody>
                     {selectedBatch.bets?.map((bet, index) => (
-                      <tr key={bet.id} className="border-t border-gray-700 hover:bg-gray-700/40">
+                      <tr
+                        key={bet.id}
+                        className="border-t border-gray-700 hover:bg-gray-700/40"
+                      >
                         <td className="px-4 py-2">{index + 1}</td>
                         <td className="px-4 py-2">{bet.selection}</td>
                         <td className="px-4 py-2">${bet.stake}</td>
@@ -216,8 +271,12 @@ export default function AccountBatchesUI() {
                       </tr>
                     ))}
                     <tr className="bg-gray-700 border-t border-gray-600 font-semibold">
-                      <td colSpan="2" className="px-4 py-2 text-right">Total</td>
-                      <td className="px-4 py-2">${calculateTotalStake(selectedBatch.bets)}</td>
+                      <td colSpan="2" className="px-4 py-2 text-right">
+                        Total
+                      </td>
+                      <td className="px-4 py-2">
+                        ${calculateTotalStake(selectedBatch.bets)}
+                      </td>
                       <td className="px-4 py-2"></td>
                     </tr>
                   </tbody>

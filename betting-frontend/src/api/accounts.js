@@ -8,8 +8,9 @@ export const getAccounts = async () => {
 };
 
 export const getAccountBatches = async (accountId) => {
-  const response = await axios.get(`${BASE_URL}/${accountId}/batches`);
-  return response.data;
+  const res = await fetch(`${BASE_URL}/${accountId}/batches`);
+  if (!res.ok) throw new Error(`Failed to fetch batches`);
+  return await res.json(); // should be []
 };
 
 export const createAccount = async (account) => {
@@ -32,8 +33,8 @@ export const deleteAccount = async (id) => {
   return response.data;
 };
 
-export const subscribeToAccountEvents = (onAccountCreated, onPing) => {
-  const eventSource = new EventSource("/sse");
+export const subscribeToAccountEvents = (onAccountCreated, onAccountDeleted, onBatchCreated, onPing) => {
+  const eventSource = new EventSource("http://localhost:3001/sse");
 
   eventSource.onopen = () => {
     console.log("✅ Connected to SSE stream");
@@ -41,14 +42,34 @@ export const subscribeToAccountEvents = (onAccountCreated, onPing) => {
 
   eventSource.onerror = (err) => {
     console.error("❌ SSE error:", err);
-    // You can choose to close or reconnect here
   };
 
   eventSource.addEventListener("account_created", (event) => {
-    const account = JSON.parse(event.data);
-    if (onAccountCreated) {
-      onAccountCreated(account);
+    try {
+      const account = JSON.parse(event.data);
+      if (onAccountCreated) {
+        onAccountCreated(account);
+      }
+    } catch (err) {
+      console.error("Failed to parse account_created event:", err);
     }
+  });
+
+  eventSource.addEventListener("account_deleted", (event) => {
+    try {
+      const payload = JSON.parse(event.data);
+      const deletedId = payload.account_id ?? payload.pk;
+      if (deletedId && onAccountDeleted) {
+        onAccountDeleted(deletedId);
+      }
+    } catch (err) {
+      console.error("Failed to parse account_deleted event:", err);
+    }
+  });
+  
+  eventSource.addEventListener("batch_created", (event) => {
+    const data = JSON.parse(event.data);
+    if (onBatchCreated) onBatchCreated(data.account_id);
   });
 
   eventSource.addEventListener("ping", (event) => {
@@ -57,5 +78,5 @@ export const subscribeToAccountEvents = (onAccountCreated, onPing) => {
     }
   });
 
-  return eventSource; // Return so the caller can close it if needed
+  return eventSource;
 };
