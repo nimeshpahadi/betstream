@@ -38,9 +38,11 @@ export default function AccountBatchesUI() {
     const es = subscribeToAccountEvents(
       (newAccount) => {
         setAccounts((prev) => {
-          const exists = prev.some(acc => acc.id === newAccount.id);
-          return exists ? prev : [...prev, newAccount];
-        });
+            const exists = prev.some(acc => acc.id === newAccount.id);
+            const updated = exists ? prev : [newAccount, ...prev];
+            return updated;
+          });
+          setAccountId(newAccount.id); 
       },
       (deletedId) => {
         setAccounts((prev) => {

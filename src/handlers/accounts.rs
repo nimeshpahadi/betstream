@@ -24,11 +24,10 @@ use crate::models::account::{
 // Event structure similar to your Go broker.Event
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrokerEvent {
-    pub id: Option<i64>,
     pub pk: Option<i64>,
-    pub account_id: Option<i64>,
-    pub account_name: Option<String>,
-    pub account_hostname: Option<String>,
+    pub id: Option<i64>,
+    pub name: Option<String>,
+    pub hostname: Option<String>,
     pub batch_id: Option<i64>,
     // pub bet_id: Option<i64>,
     pub event: String,
@@ -150,11 +149,10 @@ pub async fn create_account(
 
     // Publish event (similar to your Go broker.Publish)
     let event = BrokerEvent {
-        id: Some(chrono::Utc::now().timestamp_millis()),
         pk: Some(account.id),
-        account_id: Some(account.id),
-        account_name: Some(account.name.clone()),
-        account_hostname: Some(account.hostname.clone()),
+        id: Some(account.id),
+        name: Some(account.name.clone()),
+        hostname: Some(account.hostname.clone()),
         batch_id: None,
         event: "account_created".to_string(),
     };
@@ -198,11 +196,10 @@ pub async fn update_account(
 
     // Publish update event
     let event = BrokerEvent {
-        id: Some(chrono::Utc::now().timestamp_millis()),
         pk: Some(account.id),
-        account_id: Some(account.id),
-        account_name: Some(account.name.clone()),
-        account_hostname: Some(account.hostname.clone()),
+        id: Some(account.id),
+        name: Some(account.name.clone()),
+        hostname: Some(account.hostname.clone()),
         batch_id: None,
         // bet_id: None,
         event: "account_updated".to_string(),
@@ -235,11 +232,10 @@ pub async fn delete_account(
 
     // Publish delete event
     let event = BrokerEvent {
-        id: Some(chrono::Utc::now().timestamp_millis()),
         pk: Some(account_id),
-        account_id: Some(account_id),
-        account_name: None,
-        account_hostname: None,
+        id: Some(account_id),
+        name: None,
+        hostname: None,
         batch_id: None,
         // bet_id: None,
         event: "account_deleted".to_string(),
@@ -319,11 +315,10 @@ pub async fn create_batch(
 
     // Publish event
     let event = BrokerEvent {
-        id: Some(chrono::Utc::now().timestamp_millis()),
         pk: Some(batch.id),
-        account_id: Some(account_id),
-        account_name: None,
-        account_hostname: None,
+        id: Some(account_id),
+        name: None,
+        hostname: None,
         batch_id: Some(batch.id),
         // bet_id: Some(bet.id),
         event: "batch_created".to_string(),
