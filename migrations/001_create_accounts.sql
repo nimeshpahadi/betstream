@@ -23,17 +23,20 @@ CREATE TABLE IF NOT EXISTS batches (
     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS bets (
-    id INTEGER PRIMARY KEY,
-    selection TEXT NOT NULL,
-    stake REAL NOT NULL,
-    cost REAL NOT NULL,
-    batch_id INTEGER NOT NULL,
-    FOREIGN KEY (batch_id) REFERENCES batches(id) ON DELETE CASCADE
-);
 
 CREATE TRIGGER IF NOT EXISTS batches_update
 AFTER UPDATE ON batches
 BEGIN
     UPDATE batches SET updated_at = datetime('now') WHERE id = NEW.id;
 END;
+
+
+CREATE TABLE IF NOT EXISTS bets (
+    id INTEGER PRIMARY KEY,
+    selection TEXT NOT NULL,
+    stake REAL NOT NULL,
+    cost REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'successful', 'failed')),
+    batch_id INTEGER NOT NULL,
+    FOREIGN KEY (batch_id) REFERENCES batches(id) ON DELETE CASCADE
+);

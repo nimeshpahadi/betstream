@@ -10,7 +10,7 @@ export const getAccounts = async () => {
 export const getAccountBatches = async (accountId) => {
   const res = await fetch(`${BASE_URL}/${accountId}/batches`);
   if (!res.ok) throw new Error(`Failed to fetch batches`);
-  return await res.json(); // should be []
+  return await res.json();
 };
 
 export const createAccount = async (account) => {
@@ -33,7 +33,33 @@ export const deleteAccount = async (id) => {
   return response.data;
 };
 
-export const subscribeToAccountEvents = (onAccountCreated, onAccountDeleted, onBatchCreated, onPing) => {
+export const updateBetStatus = async (accountId, batchId, betId, status) => {
+  const response = await axios.patch(`${BASE_URL}/${accountId}/batches/${batchId}/bets/${betId}`, { status });
+  return response.data;
+};
+
+export const deleteBatch = async (accountId, batchId) => {
+  const response = await axios.delete(`${BASE_URL}/${accountId}/batches/${batchId}`);
+  return response.data;
+};
+
+export const submitBatch = async (accountId, batchId, bets) => {
+  const response = await axios.patch(`${BASE_URL}/${accountId}/batches/${batchId}/bets`, bets);
+  return response.data;
+};
+
+export const cancelBatch = async (accountId, batchId, bets) => {
+  const response = await axios.patch(`${BASE_URL}/${accountId}/batches/${batchId}/bets`, bets);
+  return response.data;
+};
+
+export const subscribeToAccountEvents = (
+  onAccountCreated,
+  onAccountDeleted,
+  onBatchCreated,
+  onPing,
+  onBetStatusUpdated
+) => {
   const eventSource = new EventSource("http://localhost:3001/sse");
 
   eventSource.onopen = () => {
@@ -58,7 +84,7 @@ export const subscribeToAccountEvents = (onAccountCreated, onAccountDeleted, onB
   eventSource.addEventListener("account_deleted", (event) => {
     try {
       const payload = JSON.parse(event.data);
-      const deletedId = payload.account_id ?? payload.pk;
+      const deletedId = payload.id ?? payload.pk;
       if (deletedId && onAccountDeleted) {
         onAccountDeleted(deletedId);
       }
@@ -66,10 +92,19 @@ export const subscribeToAccountEvents = (onAccountCreated, onAccountDeleted, onB
       console.error("Failed to parse account_deleted event:", err);
     }
   });
-  
+
   eventSource.addEventListener("batch_created", (event) => {
     const data = JSON.parse(event.data);
-    if (onBatchCreated) onBatchCreated(data.account_id);
+    if (onBatchCreated) onBatchCreated(data.id);
+  });
+
+  eventSource.addEventListener("bet_status_updated", (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (onBetStatusUpdated) onBetStatusUpdated(data);
+    } catch (err) {
+      console.error("Failed to parse bet_status_updated event:", err);
+    }
   });
 
   eventSource.addEventListener("ping", (event) => {

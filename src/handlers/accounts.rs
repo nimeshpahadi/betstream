@@ -14,7 +14,6 @@ use std::{convert::Infallible, time::Duration};
 use tokio::sync::broadcast;
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 use crate::models::account::{
-    BatchUpload,
     BatchResponse,
     CreateBatchRequest,
     Batch,
@@ -29,7 +28,7 @@ pub struct BrokerEvent {
     pub name: Option<String>,
     pub hostname: Option<String>,
     pub batch_id: Option<i64>,
-    // pub bet_id: Option<i64>,
+    pub bet_id: Option<i64>,
     pub event: String,
 }
 
@@ -59,6 +58,22 @@ pub struct CreateAccountRequest {
     pub hostname: String,
 }
 
+#[derive(Deserialize)]
+pub struct BetUpdateRequest {
+    pub pid: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateBetStatusRequest {
+    pub status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateBetStatus {
+    pub pid: i64,
+    pub status: String,
+}
+
 // SSE endpoint handler
 pub async fn sse_handler(
     State(state): State<AppState>,
@@ -68,13 +83,11 @@ pub async fn sse_handler(
         .filter_map(|result| {
             match result {
                 Ok(broker_event) => {
-                    // Convert BrokerEvent to SSE Event
                     let event_name = broker_event.event.clone();
                     let data = match serde_json::to_string(&broker_event) {
                         Ok(json) => json,
                         Err(_) => return None,
                     };
-                    
                     Some(Ok(Event::default()
                         .event(event_name)
                         .data(data)))
@@ -83,7 +96,6 @@ pub async fn sse_handler(
             }
         });
 
-    // Add heartbeat similar to your ticker
     let heartbeat = stream::repeat_with(|| {
         Ok(Event::default()
             .event("ping")
@@ -107,7 +119,10 @@ pub async fn get_accounts(
     let accounts = sqlx::query_as::<_, Account>("SELECT * FROM accounts ORDER BY created_at DESC")
         .fetch_all(&state.pool)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            eprintln!("Database error fetching accounts: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     Ok(Json(accounts))
 }
@@ -115,18 +130,21 @@ pub async fn get_accounts(
 // GET /api/v1/accounts/:id - Get account by ID
 pub async fn get_account(
     State(state): State<AppState>,
-    Path(id): Path<String>,
+    Path(id): Path<i64>,
 ) -> Result<Json<Account>, StatusCode> {
     let account = sqlx::query_as::<_, Account>("SELECT * FROM accounts WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(|e| {
+            eprintln!("Database error fetching account: {}", e);
+            StatusCode::NOT_FOUND
+        })?;
 
     Ok(Json(account))
 }
 
-// Updated create_account with event publishing
+// Create account with event publishing
 pub async fn create_account(
     State(state): State<AppState>,
     JsonExtract(payload): JsonExtract<CreateAccountRequest>,
@@ -143,21 +161,20 @@ pub async fn create_account(
     .fetch_one(&state.pool)
     .await
     .map_err(|e| {
-        eprintln!("Database error: {}", e);
+        eprintln!("Database error inserting account: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Publish event (similar to your Go broker.Publish)
     let event = BrokerEvent {
         pk: Some(account.id),
         id: Some(account.id),
         name: Some(account.name.clone()),
         hostname: Some(account.hostname.clone()),
         batch_id: None,
+        bet_id: None,
         event: "account_created".to_string(),
     };
 
-    // Send event to all SSE subscribers
     if let Err(e) = state.event_sender.send(event) {
         eprintln!("Failed to send event: {}", e);
     }
@@ -173,7 +190,7 @@ pub async fn create_account(
 // Update account implementation
 pub async fn update_account(
     State(state): State<AppState>,
-    axum::extract::Path(account_id): axum::extract::Path<i64>,
+    Path(account_id): Path<i64>,
     JsonExtract(payload): JsonExtract<CreateAccountRequest>,
 ) -> Result<Json<Account>, StatusCode> {
     let account = sqlx::query_as::<_, Account>(
@@ -190,18 +207,17 @@ pub async fn update_account(
     .fetch_one(&state.pool)
     .await
     .map_err(|e| {
-        eprintln!("Database error: {}", e);
+        eprintln!("Database error updating account: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Publish update event
     let event = BrokerEvent {
         pk: Some(account.id),
         id: Some(account.id),
         name: Some(account.name.clone()),
         hostname: Some(account.hostname.clone()),
         batch_id: None,
-        // bet_id: None,
+        bet_id: None,
         event: "account_updated".to_string(),
     };
 
@@ -219,25 +235,24 @@ pub async fn update_account(
 
 pub async fn delete_account(
     State(state): State<AppState>,
-    axum::extract::Path(account_id): axum::extract::Path<i64>,
+    Path(account_id): Path<i64>,
 ) -> Result<StatusCode, StatusCode> {
     sqlx::query("DELETE FROM accounts WHERE id = ?")
         .bind(account_id)
         .execute(&state.pool)
         .await
         .map_err(|e| {
-            eprintln!("Database error: {}", e);
+            eprintln!("Database error deleting account: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    // Publish delete event
     let event = BrokerEvent {
         pk: Some(account_id),
         id: Some(account_id),
         name: None,
         hostname: None,
         batch_id: None,
-        // bet_id: None,
+        bet_id: None,
         event: "account_deleted".to_string(),
     };
 
@@ -254,14 +269,11 @@ pub async fn create_batch(
     State(state): State<AppState>,
     JsonExtract(payload): JsonExtract<CreateBatchRequest>,
 ) -> Result<Json<BatchResponse>, StatusCode> {
-    
-    // Start transaction
     let mut tx = state.pool.begin().await.map_err(|e| {
-        eprintln!("Transaction error: {}", e);
+        eprintln!("Transaction begin error: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Create batch
     let meta_json = serde_json::to_string(&payload.meta).map_err(|e| {
         eprintln!("JSON serialization error: {}", e);
         StatusCode::BAD_REQUEST
@@ -283,7 +295,6 @@ pub async fn create_batch(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Create bets
     let mut bets = Vec::new();
     for bet_request in payload.bets {
         let bet = sqlx::query_as::<_, Bet>(
@@ -307,24 +318,21 @@ pub async fn create_batch(
         bets.push(bet);
     }
 
-    // Commit transaction
     tx.commit().await.map_err(|e| {
         eprintln!("Transaction commit error: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Publish event
     let event = BrokerEvent {
         pk: Some(batch.id),
         id: Some(account_id),
         name: None,
         hostname: None,
         batch_id: Some(batch.id),
-        // bet_id: Some(bet.id),
+        bet_id: None,
         event: "batch_created".to_string(),
     };
 
-    // Send event to all SSE subscribers
     if let Err(e) = state.event_sender.send(event) {
         eprintln!("Failed to send event: {}", e);
     }
@@ -353,8 +361,6 @@ pub async fn account_batches(
     Path(account_id): Path<i64>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<BatchResponse>>, StatusCode> {
-    
-    // Get all batches for the account
     let batches = sqlx::query_as::<_, Batch>(
         r#"
         SELECT * FROM batches 
@@ -372,7 +378,6 @@ pub async fn account_batches(
 
     let mut batch_responses = Vec::new();
 
-    // For each batch, get its associated bets
     for batch in batches {
         let bets = sqlx::query_as::<_, Bet>(
             r#"
@@ -404,9 +409,232 @@ pub async fn account_batches(
 
     println!(
         "Retrieved {} batches for account {}",
-        batch_responses.len(), 
+        batch_responses.len(),
         account_id
     );
 
     Ok(Json(batch_responses))
+}
+
+pub async fn update_account_batch_bets(
+    Path((account_id, batch_id)): Path<(i64, i64)>,
+    State(state): State<AppState>,
+    Json(bets): Json<Vec<BetUpdateRequest>>,
+) -> Result<Json<Vec<Bet>>, StatusCode> {
+    let mut tx = state.pool.begin().await.map_err(|e| {
+        eprintln!("Transaction begin error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let mut updated_bets = Vec::new();
+    for bet in bets {
+        let result = sqlx::query_as::<_, Bet>(
+            r#"
+            UPDATE bets SET status = 'successful'
+            WHERE id = ? AND batch_id = ?
+            RETURNING *
+            "#,
+        )
+        .bind(bet.pid)
+        .bind(batch_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to update bet status to successful: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        updated_bets.push(result);
+    }
+
+    tx.commit().await.map_err(|e| {
+        eprintln!("Transaction commit error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let _ = state.event_sender.send(BrokerEvent {
+        pk: None,
+        id: Some(account_id),
+        name: None,
+        hostname: None,
+        batch_id: Some(batch_id),
+        bet_id: None,
+        event: "batch_updated".to_string(),
+    });
+
+    Ok(Json(updated_bets))
+}
+
+pub async fn update_account_batch_bet(
+    Path((account_id, batch_id, bet_id)): Path<(i64, i64, i64)>,
+    State(state): State<AppState>,
+    Json(payload): Json<UpdateBetStatusRequest>,
+) -> Result<Json<Bet>, StatusCode> {
+    let mut tx = state.pool.begin().await.map_err(|e| {
+        eprintln!("Transaction begin error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let updated_bet = match payload.status.to_lowercase().as_str() {
+        "pending" | "successful" | "failed" => {
+            let query = format!(
+                "UPDATE bets SET status = '{}' WHERE id = ? AND batch_id = ? RETURNING id, selection, stake, cost, status, batch_id",
+                payload.status.to_lowercase()
+            );
+            sqlx::query_as::<_, Bet>(&query)
+                .bind(bet_id)
+                .bind(batch_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| {
+                    eprintln!("Failed to update bet: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
+        }
+        other => {
+            eprintln!("Invalid status value: {}", other);
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    };
+
+    tx.commit().await.map_err(|e| {
+        eprintln!("Transaction commit error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Emit SSE
+    let event = BrokerEvent {
+        pk: Some(bet_id),
+        id: Some(account_id),
+        name: None,
+        hostname: None,
+        batch_id: Some(batch_id),
+        bet_id: Some(bet_id),
+        event: "bet_status_updated".to_string(),
+    };
+
+    let _ = state.event_sender.send(event);
+
+    Ok(Json(updated_bet))
+}
+
+pub async fn submit_batch(
+    State(state): State<AppState>,
+    Path((account_id, batch_id)): Path<(i64, i64)>,
+    Json(bets): Json<Vec<BetUpdateRequest>>,
+) -> Result<Json<Vec<Bet>>, StatusCode> {
+    let mut tx = state.pool.begin().await.map_err(|e| {
+        eprintln!("Transaction begin error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let mut updated_bets = Vec::new();
+
+    for bet in bets {
+        // Update bet status to 'successful'
+        let updated_bet = sqlx::query_as::<_, Bet>(
+            r#"
+            UPDATE bets SET status = 'successful'
+            WHERE id = ? AND batch_id = ?
+            RETURNING *
+            "#,
+        )
+        .bind(bet.pid)
+        .bind(batch_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to update bet status to successful: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        updated_bets.push(updated_bet);
+    }
+
+    // Mark batch as completed (soft delete or completed flag)
+    sqlx::query(
+        r#"
+        UPDATE batches SET completed = 1, updated_at = datetime('now')
+        WHERE id = ? AND account_id = ?
+        "#,
+    )
+    .bind(batch_id)
+    .bind(account_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to mark batch as completed: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    tx.commit().await.map_err(|e| {
+        eprintln!("Transaction commit error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Send event for batch submitted
+    let _ = state.event_sender.send(BrokerEvent {
+        pk: None,
+        id: Some(account_id),
+        name: None,
+        hostname: None,
+        batch_id: Some(batch_id),
+        bet_id: None,
+        event: "batch_submitted".to_string(),
+    });
+
+    Ok(Json(updated_bets))
+}
+
+pub async fn cancel_batch(
+    State(state): State<AppState>,
+    Path((account_id, batch_id)): Path<(i64, i64)>,
+    Json(bets): Json<Vec<BetUpdateRequest>>,
+) -> Result<Json<Vec<Bet>>, StatusCode> {
+    let mut tx = state.pool.begin().await.map_err(|e| {
+        eprintln!("Transaction begin error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let mut updated_bets = Vec::new();
+
+    for bet in bets {
+        // Update bet status to 'failed'
+        let updated_bet = sqlx::query_as::<_, Bet>(
+            r#"
+            UPDATE bets SET status = 'failed'
+            WHERE id = ? AND batch_id = ?
+            RETURNING *
+            "#,
+        )
+        .bind(bet.pid)
+        .bind(batch_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to update bet status to failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        updated_bets.push(updated_bet);
+    }
+
+    // Optionally, mark batch as completed or canceled here if you want
+
+    tx.commit().await.map_err(|e| {
+        eprintln!("Transaction commit error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let _ = state.event_sender.send(BrokerEvent {
+        pk: None,
+        id: Some(account_id),
+        name: None,
+        hostname: None,
+        batch_id: Some(batch_id),
+        bet_id: None,
+        event: "batch_canceled".to_string(),
+    });
+
+    Ok(Json(updated_bets))
 }

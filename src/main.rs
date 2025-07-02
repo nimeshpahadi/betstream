@@ -2,7 +2,7 @@ mod models;
 mod handlers;
 
 use axum::{
-    routing::{get, post, put, delete},
+    routing::{get, post, put, patch, delete},
     Router,
 };
 use sqlx::sqlite::SqlitePool;
@@ -17,6 +17,10 @@ use handlers::accounts::{
     delete_account,
     create_batch,
     account_batches,
+    update_account_batch_bet,
+    update_account_batch_bets,
+    submit_batch,
+    cancel_batch,
     sse_handler,
     AppState
 };
@@ -59,6 +63,10 @@ async fn main() -> anyhow::Result<()> {
         // .route("/api/v1/accounts/:id/batches/:batch_id", delete(delete_account_batch))
         .route("/api/v1/accounts/:id/batches", get(account_batches))
         // .route("/api/v1/accounts/:id/batches/:batch_id", get(account_batch))
+        .route("/api/v1/accounts/:id/batches/:batch_id/bets/:bet_id", patch(update_account_batch_bet))
+        .route("/api/v1/accounts/:id/batches/:batch_id/bets", patch(update_account_batch_bets))
+        .route("/api/v1/accounts/:id/batches/:batch_id/submit", patch(submit_batch))
+        .route("/api/v1/accounts/:id/batches/:batch_id/cancel", patch(cancel_batch))
         .route("/sse", get(sse_handler))
         .layer(
             CorsLayer::new()

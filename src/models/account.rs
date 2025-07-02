@@ -81,6 +81,7 @@ pub struct Bet {
     pub selection: String,
     pub stake: f64,
     pub cost: f64,
+    pub status: String,
     pub batch_id: i64,
 }
 
