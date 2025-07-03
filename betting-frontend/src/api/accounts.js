@@ -38,15 +38,15 @@ export const updateBetStatus = async (accountId, batchId, betId, status) => {
   return response.data;
 };
 
-export const deleteBatch = async (accountId, batchId) => {
+export const submitBatch = async (accountId, batchId) => {
   const response = await axios.delete(`${BASE_URL}/${accountId}/batches/${batchId}`);
   return response.data;
 };
 
-export const submitBatch = async (accountId, batchId, bets) => {
-  const response = await axios.patch(`${BASE_URL}/${accountId}/batches/${batchId}/bets`, bets);
-  return response.data;
-};
+// export const submitBatch = async (accountId, batchId, bets) => {
+//   const response = await axios.delete(`${BASE_URL}/${accountId}/batches/${batchId}/bets`, bets);
+//   return response.data;
+// };
 
 export const cancelBatch = async (accountId, batchId, bets) => {
   const response = await axios.patch(`${BASE_URL}/${accountId}/batches/${batchId}/bets`, bets);

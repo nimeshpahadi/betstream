@@ -138,9 +138,20 @@ export default function AccountBatchesUI() {
     }
   };
 
-  const handleSubmitBatch = () => {
+  const handleSubmitBatch = async () => {
     if (!selectedBatch || !accountId) return;
-    submitBatch(accountId, selectedBatch.id);
+
+    try {
+      await submitBatch(accountId, selectedBatch.id);
+
+      // Remove the batch from local UI state
+      setBatches((prev) => prev.filter(batch => batch.id !== selectedBatch.id));
+
+      // Clear the selected batch
+      setSelectedBatchId(null);
+    } catch (err) {
+      console.error("Failed to submit batch", err);
+    }
   };
 
   const handleCancelBatch = () => {

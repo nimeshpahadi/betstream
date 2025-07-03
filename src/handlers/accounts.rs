@@ -518,40 +518,16 @@ pub async fn update_account_batch_bet(
     Ok(Json(updated_bet))
 }
 
-pub async fn submit_batch(
+pub async fn delete_account_batch(
     State(state): State<AppState>,
     Path((account_id, batch_id)): Path<(i64, i64)>,
-    Json(bets): Json<Vec<BetUpdateRequest>>,
-) -> Result<Json<Vec<Bet>>, StatusCode> {
+) -> Result<(), StatusCode> {
     let mut tx = state.pool.begin().await.map_err(|e| {
         eprintln!("Transaction begin error: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let mut updated_bets = Vec::new();
-
-    for bet in bets {
-        // Update bet status to 'successful'
-        let updated_bet = sqlx::query_as::<_, Bet>(
-            r#"
-            UPDATE bets SET status = 'successful'
-            WHERE id = ? AND batch_id = ?
-            RETURNING *
-            "#,
-        )
-        .bind(bet.pid)
-        .bind(batch_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| {
-            eprintln!("Failed to update bet status to successful: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-        updated_bets.push(updated_bet);
-    }
-
-    // Mark batch as completed (soft delete or completed flag)
+    // Only soft delete batch by marking completed
     sqlx::query(
         r#"
         UPDATE batches SET completed = 1, updated_at = datetime('now')
@@ -572,18 +548,18 @@ pub async fn submit_batch(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Send event for batch submitted
+    // Send event
     let _ = state.event_sender.send(BrokerEvent {
-        pk: None,
+        pk: Some(batch_id),
         id: Some(account_id),
         name: None,
         hostname: None,
         batch_id: Some(batch_id),
         bet_id: None,
-        event: "batch_submitted".to_string(),
+        event: "batch_deleted".to_string(),
     });
 
-    Ok(Json(updated_bets))
+    Ok(())
 }
 
 pub async fn cancel_batch(
