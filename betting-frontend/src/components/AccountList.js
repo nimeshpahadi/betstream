@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  User, Calendar, Clock, DollarSign, Target, Trophy, AlertCircle, CheckCircle, XCircle
+  User, Calendar, Clock, DollarSign, Target, CheckCircle, XCircle
 } from 'lucide-react';
 import {
   getAccounts, getAccount, getAccountBatches, subscribeToAccountEvents,
@@ -120,7 +120,6 @@ export default function AccountBatchesUI() {
           getAccount(accountId),
           getAccountBatches(accountId),
         ]);
-        // Filter out completed batches
         const activeBatches = batchesData.filter(batch => !batch.completed);
         setAccount(accountData);
         setBatches(activeBatches);
@@ -167,11 +166,7 @@ export default function AccountBatchesUI() {
 
     try {
       await submitBatch(accountId, selectedBatch.id);
-
-      // Remove the batch from local UI state
       setBatches((prev) => prev.filter(batch => batch.id !== selectedBatch.id));
-
-      // Clear the selected batch
       setSelectedBatchId(null);
     } catch (err) {
       console.error("Failed to submit batch", err);
@@ -254,11 +249,18 @@ export default function AccountBatchesUI() {
                   {selectedBatch.completed ? "Completed" : "Active"}
                 </span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm text-gray-300">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm text-gray-300 mb-4">
                 <div><Calendar className="inline w-4 h-4 mr-1" /> {formatDate(selectedBatch.created_at)}</div>
                 <div><Target className="inline w-4 h-4 mr-1" /> Total Bets: {selectedBatch.bets?.length || 0}</div>
                 <div><DollarSign className="inline w-4 h-4 mr-1" /> Total Stake: ${calculateTotalStake(selectedBatch.bets)}</div>
               </div>
+
+              <h3 className="mb-1 text-gray-300 font-semibold">Metadata:</h3>
+              {selectedBatch.meta && (
+                  <pre className="bg-gray-800 border border-gray-700 rounded-lg p-3 overflow-auto text-gray-200 text-xs">
+                    {JSON.stringify(selectedBatch.meta, null, 2)}
+                  </pre>
+                )}
             </div>
 
             <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-x-auto">
