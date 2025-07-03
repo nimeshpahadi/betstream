@@ -7,6 +7,27 @@ import {
   updateBetStatus, submitBatch, cancelBatch
 } from '../api/accounts';
 
+function BetStatusSelector({ bet, onChange }) {
+  return (
+    <div className="flex justify-center items-center space-x-4">
+      <button
+        onClick={() => onChange('successful')}
+        title="Mark as Successful"
+        className={`hover:text-green-400 ${bet.status === 'successful' ? 'text-green-500' : 'text-gray-400'}`}
+      >
+        <CheckCircle className="w-6 h-6" />
+      </button>
+      <button
+        onClick={() => onChange('failed')}
+        title="Mark as Failed"
+        className={`hover:text-red-400 ${bet.status === 'failed' ? 'text-red-500' : 'text-gray-400'}`}
+      >
+        <XCircle className="w-6 h-6" />
+      </button>
+    </div>
+  );
+}
+
 export default function AccountBatchesUI() {
   const [accounts, setAccounts] = useState([]);
   const [accountId, setAccountId] = useState(null);
@@ -268,20 +289,10 @@ export default function AccountBatchesUI() {
                       <td className="px-4 py-2">${bet.stake}</td>
                       <td className="px-4 py-2">${bet.cost}</td>
                       <td className="px-4 py-2 capitalize">{bet.status}</td>
-                      <td className="px-4 py-2 space-x-4">
-                        <input
-                          type="radio"
-                          name={`status-${bet.pid}`}
-                          checked={bet.status === 'successful'}
-                          onChange={() => handleStatusChange(bet.pid, 'successful')}
-                          className="form-radio text-green-500 focus:ring-green-500"
-                        />
-                        <input
-                          type="radio"
-                          name={`status-${bet.pid}`}
-                          checked={bet.status === 'failed'}
-                          onChange={() => handleStatusChange(bet.pid, 'failed')}
-                          className="form-radio text-red-500 focus:ring-red-500"
+                      <td className="px-4 py-2">
+                        <BetStatusSelector
+                          bet={bet}
+                          onChange={(newStatus) => handleStatusChange(bet.pid, newStatus)}
                         />
                       </td>
                     </tr>
