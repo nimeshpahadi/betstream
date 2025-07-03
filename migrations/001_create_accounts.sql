@@ -32,10 +32,11 @@ END;
 
 
 CREATE TABLE IF NOT EXISTS bets (
-    id INTEGER PRIMARY KEY,
+    pid INTEGER PRIMARY KEY AUTOINCREMENT,
+    id INTEGER NOT NULL,
     selection TEXT NOT NULL,
-    stake REAL NOT NULL,
-    cost REAL NOT NULL,
+    stake DOUBLE NOT NULL,
+    cost DOUBLE NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'successful', 'failed')),
     batch_id INTEGER NOT NULL,
     FOREIGN KEY (batch_id) REFERENCES batches(id) ON DELETE CASCADE

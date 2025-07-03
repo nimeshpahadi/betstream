@@ -75,7 +75,7 @@ export default function AccountBatchesUI() {
               ? {
                   ...batch,
                   bets: batch.bets.map(bet =>
-                    bet.id === updatedBet.id ? { ...bet, status: updatedBet.status } : bet
+                    bet.pid === updatedBet.pid ? { ...bet, status: updatedBet.status } : bet
                   )
                 }
               : batch
@@ -127,7 +127,7 @@ export default function AccountBatchesUI() {
             ? {
                 ...batch,
                 bets: batch.bets.map(bet =>
-                  bet.id === updatedBet.id ? { ...bet, status: updatedBet.status } : bet
+                  bet.pid === updatedBet.pid ? { ...bet, status: updatedBet.status } : bet
                 )
               }
             : batch
@@ -227,33 +227,48 @@ export default function AccountBatchesUI() {
             </div>
 
             <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-x-auto">
-              <table className="min-w-full text-sm">
+              <table className="min-w-full text-sm text-center">
                 <thead className="bg-gray-700 text-gray-300">
                   <tr>
                     <th className="px-4 py-2">#</th>
                     <th className="px-4 py-2">Selection</th>
                     <th className="px-4 py-2">Stake</th>
                     <th className="px-4 py-2">Cost</th>
-                    <th className="px-4 py-2">Pending</th>
-                    <th className="px-4 py-2">Success</th>
-                    <th className="px-4 py-2">Failed</th>
+                    <th className="px-4 py-2">Status</th>
+                    <th className="px-4 py-2">Update Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {selectedBatch.bets?.map((bet) => (
-                    <tr key={bet.id} className="border-t border-gray-700">
+                    <tr
+                      key={bet.pid}
+                      className={`border-t border-gray-700 ${bet.status === 'successful'
+                          ? 'bg-green-900/20'
+                          : bet.status === 'failed'
+                            ? 'bg-red-900/20'
+                            : ''
+                        }`}
+                    >
                       <td className="px-4 py-2">{bet.id}</td>
                       <td className="px-4 py-2">{bet.selection}</td>
                       <td className="px-4 py-2">${bet.stake}</td>
                       <td className="px-4 py-2">${bet.cost}</td>
-                      <td className="px-4 py-2">
-                        <input type="radio" checked={bet.status === 'pending'} onChange={() => handleStatusChange(bet.id, 'pending')} />
-                      </td>
-                      <td className="px-4 py-2">
-                        <input type="radio" checked={bet.status === 'successful'} onChange={() => handleStatusChange(bet.id, 'successful')} />
-                      </td>
-                      <td className="px-4 py-2">
-                        <input type="radio" checked={bet.status === 'failed'} onChange={() => handleStatusChange(bet.id, 'failed')} />
+                      <td className="px-4 py-2 capitalize">{bet.status}</td>
+                      <td className="px-4 py-2 space-x-4">
+                        <input
+                          type="radio"
+                          name={`status-${bet.pid}`}
+                          checked={bet.status === 'successful'}
+                          onChange={() => handleStatusChange(bet.pid, 'successful')}
+                          className="form-radio text-green-500 focus:ring-green-500"
+                        />
+                        <input
+                          type="radio"
+                          name={`status-${bet.pid}`}
+                          checked={bet.status === 'failed'}
+                          onChange={() => handleStatusChange(bet.pid, 'failed')}
+                          className="form-radio text-red-500 focus:ring-red-500"
+                        />
                       </td>
                     </tr>
                   ))}
@@ -262,10 +277,10 @@ export default function AccountBatchesUI() {
             </div>
 
             <div className="flex justify-end space-x-4">
-              <button onClick={handleSubmitBatch} className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-800">
+              <button onClick={handleSubmitBatch} className="bg-green-700 text-white px-2 py-1 rounded-md hover:bg-green-800">
                 <CheckCircle className="inline w-4 h-4 mr-1" /> Submit
               </button>
-              <button onClick={handleCancelBatch} className="bg-red-700 text-white px-4 py-2 rounded-md hover:bg-red-800">
+              <button onClick={handleCancelBatch} className="bg-red-700 text-white px-2 py-1 rounded-md hover:bg-red-800">
                 <XCircle className="inline w-4 h-4 mr-1" /> Cancel
               </button>
             </div>

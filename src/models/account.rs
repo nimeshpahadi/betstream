@@ -77,6 +77,7 @@ pub struct CreateBetRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Bet {
+    pub pid: i64,
     pub id: i64,
     pub selection: String,
     pub stake: f64,

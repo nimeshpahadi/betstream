@@ -431,7 +431,7 @@ pub async fn update_account_batch_bets(
         let result = sqlx::query_as::<_, Bet>(
             r#"
             UPDATE bets SET status = 'successful'
-            WHERE id = ? AND batch_id = ?
+            WHERE pid = ? AND batch_id = ?
             RETURNING *
             "#,
         )
@@ -453,7 +453,7 @@ pub async fn update_account_batch_bets(
     })?;
 
     let _ = state.event_sender.send(BrokerEvent {
-        pk: None,
+        pk: Some(batch_id),
         id: Some(account_id),
         name: None,
         hostname: None,
@@ -478,7 +478,7 @@ pub async fn update_account_batch_bet(
     let updated_bet = match payload.status.to_lowercase().as_str() {
         "pending" | "successful" | "failed" => {
             let query = format!(
-                "UPDATE bets SET status = '{}' WHERE id = ? AND batch_id = ? RETURNING id, selection, stake, cost, status, batch_id",
+                "UPDATE bets SET status = '{}' WHERE pid = ? AND batch_id = ? RETURNING pid, id, selection, stake, cost, status, batch_id",
                 payload.status.to_lowercase()
             );
             sqlx::query_as::<_, Bet>(&query)
