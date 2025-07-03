@@ -59,8 +59,9 @@ export default function AccountBatchesUI() {
         if (batchAccountId === accountIdRef.current) {
           getAccountBatches(accountIdRef.current)
             .then((batchesData) => {
-              setBatches(batchesData);
-              setSelectedBatchId(batchesData[0]?.id || null);
+              const activeBatches = batchesData.filter(batch => !batch.completed);
+              setBatches(activeBatches);
+              setSelectedBatchId(activeBatches[0]?.id || null);
             })
             .catch((err) => {
               console.error("Failed to reload batches after batch_created", err);
@@ -98,9 +99,11 @@ export default function AccountBatchesUI() {
           getAccount(accountId),
           getAccountBatches(accountId),
         ]);
+        // Filter out completed batches
+        const activeBatches = batchesData.filter(batch => !batch.completed);
         setAccount(accountData);
-        setBatches(batchesData);
-        setSelectedBatchId(batchesData[0]?.id || null);
+        setBatches(activeBatches);
+        setSelectedBatchId(activeBatches[0]?.id || null);
       } catch (err) {
         console.error("Data fetch error:", err);
         setError("Failed to load account and batch data");
