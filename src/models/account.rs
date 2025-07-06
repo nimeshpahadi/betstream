@@ -3,8 +3,15 @@ use serde_json::Value as JsonValue;
 use sqlx::FromRow;
 use chrono::{DateTime, Utc};
 
-use sqlx::SqlitePool;
-use tokio::sync::broadcast;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrokerEvent {
+    pub pk: i64,
+    pub account_id: i64,
+    pub batch_id: i64,
+    pub bet_id: i64,
+    pub event: String,
+}
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct Account {
@@ -21,35 +28,15 @@ pub struct CreateAccountRequest {
     pub hostname: String,
 }
 
+#[derive(Deserialize)]
+pub struct BetUpdateRequest {
+    pub pid: i64,
+}
+
 #[derive(Debug, Deserialize)]
-pub struct UpdateAccountRequest {
-    pub name: Option<String>,
-    pub hostname: Option<String>,
+pub struct UpdateBetStatusRequest {
+    pub status: String,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BrokerEvent {
-    pub id: Option<i64>,
-    pub pk: Option<i64>,
-    pub account_id: Option<i64>,
-    pub account_name: Option<String>,
-    pub account_hostname: Option<String>,
-    pub batch_id: Option<i64>,
-    pub bet_id: Option<i64>,
-    pub event: String,
-}
-
-// Global event broadcaster
-pub type EventSender = broadcast::Sender<BrokerEvent>;
-pub type EventReceiver = broadcast::Receiver<BrokerEvent>;
-
-// Application state that includes the event broadcaster
-#[derive(Clone)]
-pub struct AppState {
-    pub pool: SqlitePool,
-    pub event_sender: EventSender,
-}
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Batch {
@@ -107,13 +94,6 @@ pub struct BetData {
     pub cost: f64,
 }
 
-// #[derive(Debug, Serialize)]
-// pub struct BatchResponse {
-//     #[serde(flatten)]
-//     pub batch: Batch,
-//     pub bets: Vec<Bet>,
-// }
-
 #[derive(Debug, Serialize)]
 pub struct BatchResponse {
     pub id: i64,
@@ -123,5 +103,4 @@ pub struct BatchResponse {
     pub meta: JsonValue,
     pub account_id: i64,
     pub bets: Vec<Bet>,
-    // pub bets: Vec<super::bet::Bet>,
 }

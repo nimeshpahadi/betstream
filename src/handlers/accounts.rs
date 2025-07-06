@@ -8,29 +8,22 @@ use axum::{
     Json as JsonExtract,
 };
 use futures::stream::{self, Stream};
-use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::{convert::Infallible, time::Duration};
 use tokio::sync::broadcast;
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 use crate::models::account::{
+    Account,
+    CreateAccountRequest,
+    BetUpdateRequest,
+    UpdateBetStatusRequest,
     BatchResponse,
     CreateBatchRequest,
     Batch,
-    Bet
+    Bet,
+    BrokerEvent
 };
 
-// Event structure similar to your Go broker.Event
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BrokerEvent {
-    pub pk: Option<i64>,
-    pub id: Option<i64>,
-    pub name: Option<String>,
-    pub hostname: Option<String>,
-    pub batch_id: Option<i64>,
-    pub bet_id: Option<i64>,
-    pub event: String,
-}
 
 // Global event broadcaster
 pub type EventSender = broadcast::Sender<BrokerEvent>;
@@ -40,38 +33,6 @@ pub type EventSender = broadcast::Sender<BrokerEvent>;
 pub struct AppState {
     pub pool: SqlitePool,
     pub event_sender: EventSender,
-}
-
-// Your existing structs
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
-pub struct Account {
-    pub id: i64,
-    pub name: String,
-    pub hostname: String,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateAccountRequest {
-    pub name: String,
-    pub hostname: String,
-}
-
-#[derive(Deserialize)]
-pub struct BetUpdateRequest {
-    pub pid: i64,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateBetStatusRequest {
-    pub status: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateBetStatus {
-    pub pid: i64,
-    pub status: String,
 }
 
 // SSE endpoint handler
@@ -337,14 +298,12 @@ pub async fn create_batch(
         eprintln!("Failed to send event: {}", e);
     }
 
-    let meta_parsed = batch.meta.clone();
-
     let response = BatchResponse {
         id: batch.id,
         completed: batch.completed,
         created_at: batch.created_at.to_rfc3339(),
         updated_at: batch.updated_at.to_rfc3339(),
-        meta: meta_parsed,
+        meta: batch.meta,
         account_id: batch.account_id,
         bets,
     };
