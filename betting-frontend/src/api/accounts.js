@@ -2,24 +2,24 @@ import axios from "axios";
 
 const BASE_URL = "/api/v1/accounts";
 
+// REST APIs
 export const getAccounts = async () => {
   const response = await axios.get(BASE_URL);
   return response.data;
 };
 
+export const getAccount = async (id) => {
+  const response = await axios.get(`${BASE_URL}/${id}`);
+  return response.data;
+};
+
 export const getAccountBatches = async (accountId) => {
-  const res = await fetch(`${BASE_URL}/${accountId}/batches`);
-  if (!res.ok) throw new Error(`Failed to fetch batches`);
-  return await res.json();
+  const response = await axios.get(`${BASE_URL}/${accountId}/batches`);
+  return response.data;
 };
 
 export const createAccount = async (account) => {
   const response = await axios.post(BASE_URL, account);
-  return response.data;
-};
-
-export const getAccount = async (id) => {
-  const response = await axios.get(`${BASE_URL}/${id}`);
   return response.data;
 };
 
@@ -34,7 +34,10 @@ export const deleteAccount = async (id) => {
 };
 
 export const updateBetStatus = async (accountId, batchId, betId, status) => {
-  const response = await axios.patch(`${BASE_URL}/${accountId}/batches/${batchId}/bets/${betId}`, { status });
+  const response = await axios.patch(
+    `${BASE_URL}/${accountId}/batches/${batchId}/bets/${betId}`,
+    { status }
+  );
   return response.data;
 };
 
@@ -43,16 +46,15 @@ export const submitBatch = async (accountId, batchId) => {
   return response.data;
 };
 
-// export const submitBatch = async (accountId, batchId, bets) => {
-//   const response = await axios.delete(`${BASE_URL}/${accountId}/batches/${batchId}/bets`, bets);
-//   return response.data;
-// };
-
-export const cancelBatch = async (accountId, batchId, bets) => {
-  const response = await axios.patch(`${BASE_URL}/${accountId}/batches/${batchId}/bets`, bets);
+export const cancelBatch = async (accountId, batchId, bets = []) => {
+  const response = await axios.patch(
+    `${BASE_URL}/${accountId}/batches/${batchId}/bets`,
+    { bets }
+  );
   return response.data;
 };
 
+// SSE Subscription
 export const subscribeToAccountEvents = (
   onAccountCreated,
   onAccountDeleted,
@@ -60,8 +62,8 @@ export const subscribeToAccountEvents = (
   onPing,
   onBetStatusUpdated
 ) => {
-  // const eventSource = new EventSource("http://localhost:3001/sse");
-  const eventSource = new EventSource("http://172.29.58.140:3001/sse");
+  const SSE_URL = "http://localhost:3001/sse";
+  const eventSource = new EventSource(SSE_URL);
 
   eventSource.onopen = () => {
     console.log("✅ Connected to SSE stream");
@@ -74,9 +76,7 @@ export const subscribeToAccountEvents = (
   eventSource.addEventListener("account_created", (event) => {
     try {
       const account = JSON.parse(event.data);
-      if (onAccountCreated) {
-        onAccountCreated(account);
-      }
+      onAccountCreated?.(account);
     } catch (err) {
       console.error("Failed to parse account_created event:", err);
     }
@@ -86,32 +86,33 @@ export const subscribeToAccountEvents = (
     try {
       const payload = JSON.parse(event.data);
       const deletedId = payload.id ?? payload.pk;
-      if (deletedId && onAccountDeleted) {
-        onAccountDeleted(deletedId);
-      }
+      if (deletedId) onAccountDeleted?.(deletedId);
     } catch (err) {
       console.error("Failed to parse account_deleted event:", err);
     }
   });
 
   eventSource.addEventListener("batch_created", (event) => {
-    const data = JSON.parse(event.data);
-    if (onBatchCreated) onBatchCreated(data.id);
+    try {
+      const batchData = JSON.parse(event.data);
+      console.log("📦 batch_created:", batchData);
+      onBatchCreated?.(batchData);
+    } catch (err) {
+      console.error("Failed to parse batch_created event:", err);
+    }
   });
 
   eventSource.addEventListener("bet_status_updated", (event) => {
     try {
-      const data = JSON.parse(event.data);
-      if (onBetStatusUpdated) onBetStatusUpdated(data);
+      const updatedBet = JSON.parse(event.data);
+      onBetStatusUpdated?.(updatedBet);
     } catch (err) {
       console.error("Failed to parse bet_status_updated event:", err);
     }
   });
 
   eventSource.addEventListener("ping", (event) => {
-    if (onPing) {
-      onPing(event.data);
-    }
+    onPing?.(event.data);
   });
 
   return eventSource;

@@ -2,16 +2,17 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{
-        sse::{Event, Sse},
+        sse::{Event, Sse, KeepAlive},
         Json,
     },
     Json as JsonExtract,
 };
-use futures::stream::{self, Stream};
+use futures::stream::Stream;
 use sqlx::SqlitePool;
 use std::{convert::Infallible, time::Duration};
 use tokio::sync::broadcast;
-use tokio_stream::{wrappers::BroadcastStream, StreamExt};
+use tokio_stream::wrappers::{BroadcastStream, IntervalStream};
+use tokio_stream::StreamExt;
 use crate::models::account::{
     Account,
     CreateAccountRequest,
@@ -37,7 +38,7 @@ pub struct AppState {
 
 // SSE endpoint handler
 pub async fn sse_handler(
-    State(state): State<AppState>,
+    axum::extract::State(state): axum::extract::State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let db = state.pool.clone();
     let rx = state.event_sender.subscribe();
@@ -53,114 +54,86 @@ pub async fn sse_handler(
 
                 let event_name = event.event.clone();
 
-                let payload_result = match event_name.as_str() {
+                let payload = match event_name.as_str() {
                     "account_created" | "account_updated" => {
-                        if let Some(account_id) = event.account_id {
-                            sqlx::query_as::<_, Account>("SELECT * FROM accounts WHERE id = ?")
-                                .bind(account_id)
-                                .fetch_one(&db)
-                                .await
-                                .ok()
-                                .and_then(|acc| serde_json::to_string(&acc).ok())
-                        } else {
-                            None
-                        }
+                        let row = sqlx::query_as::<_, Account>(
+                            "SELECT * FROM accounts WHERE id = ?",
+                        )
+                        .bind(event.account_id)
+                        .fetch_one(&db)
+                        .await
+                        .ok()?;
+                        serde_json::to_string(&row).ok()
                     }
 
                     "account_deleted" => {
                         Some(serde_json::json!({ "id": event.pk }).to_string())
                     }
+                    "batch_created" | "batch_deleted" => {
+                        // First get the batch
+                        let batch = sqlx::query_as::<_, Batch>(
+                            "SELECT * FROM batches WHERE id = ?",
+                        )
+                        .bind(event.pk)
+                        .fetch_one(&db)
+                        .await
+                        .ok()?;
 
-                    "batch_created" | "batch_updated" => {
-                        if let (Some(batch_id), Some(account_id)) = (event.batch_id, event.account_id) {
-                            let batch_opt = sqlx::query_as::<_, Batch>(
-                                "SELECT * FROM batches WHERE id = ? AND account_id = ?"
-                            )
-                            .bind(batch_id)
-                            .bind(account_id)
-                            .fetch_one(&db)
-                            .await
-                            .ok();
+                        // Then get the bets for this batch
+                        let bets = sqlx::query_as::<_, Bet>(
+                            "SELECT * FROM bets WHERE batch_id = ? ORDER BY id",
+                        )
+                        .bind(event.pk)
+                        .fetch_all(&db)
+                        .await
+                        .unwrap_or_default();
 
-                            if let Some(batch) = batch_opt {
-                                let bets = sqlx::query_as::<_, Bet>(
-                                    "SELECT * FROM bets WHERE batch_id = ? ORDER BY id"
-                                )
-                                .bind(batch.id)
-                                .fetch_all(&db)
-                                .await
-                                .unwrap_or_default();
+                        // Create a BatchResponse object to send
+                        let batch_response = BatchResponse {
+                            id: batch.id,
+                            completed: batch.completed,
+                            created_at: batch.created_at.to_rfc3339(),
+                            updated_at: batch.updated_at.to_rfc3339(),
+                            meta: batch.meta,
+                            account_id: batch.account_id,
+                            bets,
+                        };
 
-                                let response = serde_json::json!({
-                                    "id": batch.id,
-                                    "account_id": batch.account_id,
-                                    "completed": batch.completed,
-                                    "created_at": batch.created_at,
-                                    "updated_at": batch.updated_at,
-                                    "meta": batch.meta,
-                                    "bets": bets,
-                                });
-
-                                Some(response.to_string())
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
+                        serde_json::to_string(&batch_response).ok()
                     }
-
-                    "batch_deleted" => {
-                        Some(serde_json::json!({
-                            "id": event.batch_id,
-                            "account_id": event.account_id
-                        }).to_string())
-                    }
-
                     "bet_status_updated" => {
-                        if let Some(bet_id) = event.bet_id {
-                            sqlx::query_as::<_, Bet>("SELECT * FROM bets WHERE pid = ?")
-                                .bind(bet_id)
-                                .fetch_one(&db)
-                                .await
-                                .ok()
-                                .and_then(|bet| serde_json::to_string(&bet).ok())
-                        } else {
-                            None
-                        }
+                        let row = sqlx::query_as::<_, Bet>(
+                            "SELECT * FROM bets WHERE id = ?",
+                        )
+                        .bind(event.bet_id)
+                        .fetch_one(&db)
+                        .await
+                        .ok()?;
+                        serde_json::to_string(&row).ok()
                     }
 
-                    "batch_canceled" => {
-                        Some(serde_json::json!({
-                            "account_id": event.account_id,
-                            "batch_id": event.batch_id
-                        }).to_string())
-                    }
-
-                    _ => {
-                        serde_json::to_string(&event).ok()
-                    }
+                    _ => serde_json::to_string(&event).ok(),
                 };
 
-                payload_result.map(|data| {
+                payload.map(|data| {
                     Ok(Event::default()
                         .event(event_name)
                         .data(data))
                 })
             }
         })
-        .filter_map(|e| async move { e });
+        .filter_map(|e| e);
 
-    let heartbeat = stream::repeat_with(|| {
-        Ok(Event::default()
-            .event("ping")
-            .data(chrono::Utc::now().to_rfc3339()))
-    })
-    .throttle(Duration::from_secs(10));
+    let heartbeat = IntervalStream::new(tokio::time::interval(Duration::from_secs(10)))
+        .map(|_| {
+            Ok(Event::default()
+                .event("ping")
+                .data(chrono::Utc::now().to_rfc3339()))
+        });
 
-    let combined_stream = stream::select(event_stream, heartbeat);
+    let stream = tokio_stream::StreamExt::merge(event_stream, heartbeat);
 
-    Sse::new(combined_stream).keep_alive(
+    Sse::new(stream).keep_alive(
         KeepAlive::new()
             .interval(Duration::from_secs(10))
             .text("keep-alive"),

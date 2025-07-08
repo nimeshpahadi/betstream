@@ -1,27 +1,42 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from "react";
 import {
-  User, Calendar, DollarSign, Target,
-  CheckCircle, XCircle, Package, Menu
-} from 'lucide-react';
+  User,
+  Calendar,
+  DollarSign,
+  Target,
+  CheckCircle,
+  XCircle,
+  Package,
+  Menu,
+} from "lucide-react";
 import {
-  getAccounts, getAccount, getAccountBatches, subscribeToAccountEvents,
-  updateBetStatus, submitBatch, cancelBatch
-} from '../api/accounts';
+  getAccounts,
+  getAccount,
+  getAccountBatches,
+  subscribeToAccountEvents,
+  updateBetStatus,
+  submitBatch,
+  cancelBatch,
+} from "../api/accounts";
 
 function BetStatusSelector({ bet, onChange }) {
   return (
     <div className="flex justify-center items-center space-x-4">
       <button
-        onClick={() => onChange('successful')}
+        onClick={() => onChange("successful")}
         title="Mark as Successful"
-        className={`hover:text-green-400 ${bet.status === 'successful' ? 'text-green-500' : 'text-gray-400'}`}
+        className={`hover:text-green-400 ${
+          bet.status === "successful" ? "text-green-500" : "text-gray-400"
+        }`}
       >
         <CheckCircle className="w-6 h-6" />
       </button>
       <button
-        onClick={() => onChange('failed')}
+        onClick={() => onChange("failed")}
         title="Mark as Failed"
-        className={`hover:text-red-400 ${bet.status === 'failed' ? 'text-red-500' : 'text-gray-400'}`}
+        className={`hover:text-red-400 ${
+          bet.status === "failed" ? "text-red-500" : "text-gray-400"
+        }`}
       >
         <XCircle className="w-6 h-6" />
       </button>
@@ -38,11 +53,20 @@ export default function AccountBatchesUI() {
   const [selectedBatchId, setSelectedBatchId] = useState(null);
   const [error, setError] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
   const accountIdRef = useRef(accountId);
+  const selectedBatchIdRef = useRef(selectedBatchId);
 
-  const selectedBatch = batches.find(b => b.id === selectedBatchId);
+  // Keep refs updated with latest state values
+  useEffect(() => {
+    accountIdRef.current = accountId;
+  }, [accountId]);
 
-  useEffect(() => { accountIdRef.current = accountId; }, [accountId]);
+  useEffect(() => {
+    selectedBatchIdRef.current = selectedBatchId;
+  }, [selectedBatchId]);
+
+  const selectedBatch = batches.find((b) => b.id === selectedBatchId);
 
   useEffect(() => {
     const loadInitialAccounts = async () => {
@@ -50,54 +74,59 @@ export default function AccountBatchesUI() {
         const data = await getAccounts();
         setAccounts(data);
         if (data.length > 0) setAccountId(data[0].id);
-      } catch { setError('Failed to load accounts'); }
+      } catch {
+        setError("Failed to load accounts");
+      }
     };
     loadInitialAccounts();
 
     const es = subscribeToAccountEvents(
       (newAccount) => {
-        if (!newAccount.account_id) return;
-        setAccounts(prev =>
-        prev.some(acc => acc.id === newAccount.account_id)
-            ? prev
-            : [ { ...newAccount, id: newAccount.account_id }, ...prev ]
+        if (!newAccount.id) return;
+        setAccounts((prev) =>
+          prev.some((acc) => acc.id === newAccount.id) ? prev : [newAccount, ...prev]
         );
-        setAccountId(newAccount.account_id);
+        setAccountId(newAccount.id);
       },
       (deletedId) => {
-        setAccounts(prev => {
-          const filtered = prev.filter(acc => acc.id !== deletedId);
-          setAccountId(prevId => prevId === deletedId ? (filtered[0]?.id ?? null) : prevId);
+        setAccounts((prev) => {
+          const filtered = prev.filter((acc) => acc.id !== deletedId);
+          setAccountId((prevId) =>
+            prevId === deletedId ? (filtered[0]?.id ?? null) : prevId
+          );
           return filtered;
         });
       },
-      (batchAccountId) => {
-        if (batchAccountId === accountIdRef.current) {
-          getAccountBatches(accountIdRef.current)
-            .then(batchesData => {
-              const active = batchesData.filter(b => !b.completed);
-              setBatches(active);
-              setSelectedBatchId(active[0]?.id || null);
-            })
-            .catch(console.error);
+      (batchData) => {
+        if (batchData.account_id === accountIdRef.current) {
+          if (!batchData.completed) {
+            setBatches((prev) => {
+              if (prev.some((b) => b.id === batchData.id)) return prev;
+              if (!selectedBatchIdRef.current) {
+                setSelectedBatchId(batchData.id);
+              }
+              return [batchData, ...prev];
+            });
+          }
         }
       },
       console.log,
       (updatedBet) => {
-        setBatches(prev =>
-          prev.map(batch =>
+        setBatches((prev) =>
+          prev.map((batch) =>
             batch.id === updatedBet.batch_id
               ? {
                   ...batch,
-                  bets: batch.bets.map(bet =>
+                  bets: batch.bets.map((bet) =>
                     bet.pid === updatedBet.pid ? { ...bet, status: updatedBet.status } : bet
-                  )
+                  ),
                 }
               : batch
           )
         );
       }
     );
+
     return () => es.close();
   }, []);
 
@@ -111,7 +140,7 @@ export default function AccountBatchesUI() {
           getAccount(accountId),
           getAccountBatches(accountId),
         ]);
-        const active = batchesData.filter(batch => !batch.completed);
+        const active = batchesData.filter((batch) => !batch.completed);
         setAccount(accountData);
         setBatches(active);
         setSelectedBatchId(active[0]?.id || null);
@@ -125,25 +154,30 @@ export default function AccountBatchesUI() {
   }, [accountId]);
 
   const formatDate = (d) => new Date(d).toLocaleString("en-US");
-  const calculateTotalStake = (bets) => bets.reduce((sum, bet) => sum + (bet.stake || 0), 0).toFixed(2);
+  const calculateTotalStake = (bets) =>
+    bets.reduce((sum, bet) => sum + (bet.stake || 0), 0).toFixed(2);
 
-  const getStatusCounts = (bets = []) => bets.reduce((acc, b) => {
-    if (b.status === 'successful') acc.successful++;
-    else if (b.status === 'failed') acc.failed++;
-    else acc.pending++;
-    return acc;
-  }, { successful: 0, failed: 0, pending: 0 });
+  const getStatusCounts = (bets = []) =>
+    bets.reduce(
+      (acc, b) => {
+        if (b.status === "successful") acc.successful++;
+        else if (b.status === "failed") acc.failed++;
+        else acc.pending++;
+        return acc;
+      },
+      { successful: 0, failed: 0, pending: 0 }
+    );
 
   const handleStatusChange = async (betId, status) => {
     if (!selectedBatch || !accountId) return;
     try {
       const updated = await updateBetStatus(accountId, selectedBatch.id, betId, status);
-      setBatches(prev =>
-        prev.map(batch =>
+      setBatches((prev) =>
+        prev.map((batch) =>
           batch.id === updated.batch_id
             ? {
                 ...batch,
-                bets: batch.bets.map(b => b.pid === updated.pid ? { ...b, status: updated.status } : b)
+                bets: batch.bets.map((b) => (b.pid === updated.pid ? { ...b, status: updated.status } : b)),
               }
             : batch
         )
@@ -157,7 +191,7 @@ export default function AccountBatchesUI() {
     if (!selectedBatch || !accountId) return;
     try {
       await submitBatch(accountId, selectedBatch.id);
-      setBatches(prev => prev.filter(b => b.id !== selectedBatch.id));
+      setBatches((prev) => prev.filter((b) => b.id !== selectedBatch.id));
       setSelectedBatchId(null);
     } catch (err) {
       console.error("Failed to submit batch", err);
@@ -169,8 +203,18 @@ export default function AccountBatchesUI() {
     cancelBatch(accountId, selectedBatch.id);
   };
 
-  if (loading) return <div className="min-h-screen bg-gray-900 text-white flex justify-center items-center">Loading...</div>;
-  if (error) return <div className="min-h-screen bg-gray-900 text-red-400 flex justify-center items-center">{error}</div>;
+  if (loading)
+    return (
+      <div className="min-h-screen bg-gray-900 text-white flex justify-center items-center">
+        Loading...
+      </div>
+    );
+  if (error)
+    return (
+      <div className="min-h-screen bg-gray-900 text-red-400 flex justify-center items-center">
+        {error}
+      </div>
+    );
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
@@ -182,20 +226,28 @@ export default function AccountBatchesUI() {
       </div>
       <div className="lg:grid lg:grid-cols-4">
         {/* Sidebar Drawer */}
-        <aside className={`fixed z-40 lg:static top-0 left-0 h-full lg:h-auto w-64 lg:w-auto transform transition-transform duration-200 ease-in-out bg-gray-800 border-r border-gray-700 p-4 space-y-6 lg:block ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        <aside
+          className={`fixed z-40 lg:static top-0 left-0 h-full lg:h-auto w-64 lg:w-auto transform transition-transform duration-200 ease-in-out bg-gray-800 border-r border-gray-700 p-4 space-y-6 lg:block ${
+            sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+          }`}
+        >
           <div className="flex justify-between items-center lg:hidden mb-4">
             <h2 className="text-white text-lg">Accounts</h2>
-            <button onClick={() => setSidebarOpen(false)} className="text-white">✕</button>
+            <button onClick={() => setSidebarOpen(false)} className="text-white">
+              ✕
+            </button>
           </div>
 
           <div>
             <h2 className="text-xs text-gray-400 uppercase tracking-wider mb-2">Accounts</h2>
             <ul className="space-y-2">
-              {accounts.map(acc => (
+              {accounts.map((acc) => (
                 <li key={acc.id}>
                   <button
                     className={`w-full px-3 py-1.5 rounded-md border font-medium truncate text-left ${
-                      accountId === acc.id ? "bg-blue-900/50 border-blue-400 text-blue-200" : "border-gray-600 text-gray-300 hover:bg-gray-700/40"
+                      accountId === acc.id
+                        ? "bg-blue-900/50 border-blue-400 text-blue-200"
+                        : "border-gray-600 text-gray-300 hover:bg-gray-700/40"
                     }`}
                     onClick={() => {
                       setAccountId(acc.id);
@@ -213,11 +265,13 @@ export default function AccountBatchesUI() {
           <div>
             <h3 className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Batches</h3>
             <ul className="space-y-2 max-h-52 overflow-auto pr-1">
-              {batches.map(batch => (
+              {batches.map((batch) => (
                 <li key={batch.id}>
                   <button
                     className={`w-full px-3 py-1.5 rounded-md border flex items-center gap-2 truncate ${
-                      selectedBatchId === batch.id ? "bg-blue-900/50 border-blue-400 text-blue-200" : "border-gray-600 text-gray-300 hover:bg-gray-700/50"
+                      selectedBatchId === batch.id
+                        ? "bg-blue-900/50 border-blue-400 text-blue-200"
+                        : "border-gray-600 text-gray-300 hover:bg-gray-700/50"
                     }`}
                     onClick={() => {
                       setSelectedBatchId(batch.id);
@@ -234,37 +288,51 @@ export default function AccountBatchesUI() {
 
           {account && (
             <div className="border-t border-gray-600 pt-3 text-xs text-gray-400 space-y-1">
-              <div><User className="inline w-4 h-4 mr-1" /> {account.name || 'Unnamed'}</div>
+              <div>
+                <User className="inline w-4 h-4 mr-1" /> {account.name || "Unnamed"}
+              </div>
               <div>Total Batches: {batches.length}</div>
-              <div>Active: {batches.filter(b => !b.completed).length}</div>
-              <div>Completed: {batches.filter(b => b.completed).length}</div>
+              <div>Active: {batches.filter((b) => !b.completed).length}</div>
+              <div>Completed: {batches.filter((b) => b.completed).length}</div>
             </div>
           )}
         </aside>
 
-        {/* Main content remains unchanged (your batch block) */}
+        {/* Main content */}
         <main className="lg:col-span-3 p-4">
-          {/* Your existing batch block remains unchanged here */}
           <section className="lg:col-span-3 space-y-4">
             {selectedBatch && (
               <div className="space-y-4">
                 <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
                   {/* Batch Info */}
                   <div className="flex justify-between items-center mb-4">
-                    <h1 className="text-lg font-bold">{selectedBatch.meta?.name || `Batch ${selectedBatch.id}`}</h1>
-                    <span className={`px-3 py-1 text-sm rounded-full border ${
-                      selectedBatch.completed
-                        ? "text-green-300 border-green-600 bg-green-900/20"
-                        : "text-orange-300 border-orange-600 bg-orange-900/20"
-                    }`}>
+                    <h1 className="text-lg font-bold">
+                      {selectedBatch.meta?.name || `Batch ${selectedBatch.id}`}
+                    </h1>
+                    <span
+                      className={`px-3 py-1 text-sm rounded-full border ${
+                        selectedBatch.completed
+                          ? "text-green-300 border-green-600 bg-green-900/20"
+                          : "text-orange-300 border-orange-600 bg-orange-900/20"
+                      }`}
+                    >
                       {selectedBatch.completed ? "Completed" : "Active"}
                     </span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm text-gray-300 mb-4">
-                    <div><Calendar className="inline w-4 h-4 mr-1" /> {formatDate(selectedBatch.created_at)}</div>
-                    <div><Target className="inline w-4 h-4 mr-1" /> Total Bets: {selectedBatch.bets?.length || 0}</div>
-                    <div><DollarSign className="inline w-4 h-4 mr-1" /> Total Stake: ${calculateTotalStake(selectedBatch.bets)}</div>
+                    <div>
+                      <Calendar className="inline w-4 h-4 mr-1" />{" "}
+                      {formatDate(selectedBatch.created_at)}
+                    </div>
+                    <div>
+                      <Target className="inline w-4 h-4 mr-1" /> Total Bets:{" "}
+                      {selectedBatch.bets?.length || 0}
+                    </div>
+                    <div>
+                      <DollarSign className="inline w-4 h-4 mr-1" /> Total Stake: $
+                      {calculateTotalStake(selectedBatch.bets)}
+                    </div>
                   </div>
 
                   {/* Metadata Block */}
@@ -278,7 +346,9 @@ export default function AccountBatchesUI() {
                       {/* Status Badges */}
                       <div className="flex flex-wrap gap-2 mt-3">
                         {(() => {
-                          const { successful, failed, pending } = getStatusCounts(selectedBatch.bets);
+                          const { successful, failed, pending } = getStatusCounts(
+                            selectedBatch.bets
+                          );
                           return (
                             <>
                               <span className="inline-flex items-center px-3 py-1 text-xs font-medium rounded-full bg-green-900/20 text-green-300 border border-green-600">
@@ -315,12 +385,13 @@ export default function AccountBatchesUI() {
                       {selectedBatch.bets?.map((bet) => (
                         <tr
                           key={bet.pid}
-                          className={`border-t border-gray-700 ${bet.status === 'successful'
-                              ? 'bg-green-900/20'
-                              : bet.status === 'failed'
-                                ? 'bg-red-900/20'
-                                : ''
-                            }`}
+                          className={`border-t border-gray-700 ${
+                            bet.status === "successful"
+                              ? "bg-green-900/20"
+                              : bet.status === "failed"
+                              ? "bg-red-900/20"
+                              : ""
+                          }`}
                         >
                           <td className="px-4 py-2">{bet.id}</td>
                           <td className="px-4 py-2">{bet.selection}</td>
@@ -340,16 +411,29 @@ export default function AccountBatchesUI() {
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex justify-end space-x-4">
-                  <button onClick={handleSubmitBatch} className="bg-green-700 text-white px-2 py-1 rounded-md hover:bg-green-800">
-                    <CheckCircle className="inline w-4 h-4 mr-1" /> Submit
+                <div className="flex gap-3 justify-end mt-4">
+                  <button
+                    onClick={handleSubmitBatch}
+                    disabled={selectedBatch.completed}
+                    className="bg-green-700 px-4 py-2 rounded-md hover:bg-green-600 disabled:bg-gray-700"
+                  >
+                    Submit Batch
                   </button>
-                  <button onClick={handleCancelBatch} className="bg-red-700 text-white px-2 py-1 rounded-md hover:bg-red-800">
-                    <XCircle className="inline w-4 h-4 mr-1" /> Cancel
+                  <button
+                    onClick={handleCancelBatch}
+                    disabled={selectedBatch.completed}
+                    className="bg-red-700 px-4 py-2 rounded-md hover:bg-red-600 disabled:bg-gray-700"
+                  >
+                    Cancel Batch
                   </button>
                 </div>
               </div>
             )}
+          {!selectedBatch && (
+            <div className="flex justify-center items-center h-64 text-yellow-300 text-lg font-semibold">
+              No active batch
+            </div>
+          )}
           </section>
         </main>
       </div>
