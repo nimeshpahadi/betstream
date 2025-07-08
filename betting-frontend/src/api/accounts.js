@@ -60,7 +60,8 @@ export const subscribeToAccountEvents = (
   onPing,
   onBetStatusUpdated
 ) => {
-  const eventSource = new EventSource("http://localhost:3001/sse");
+  // const eventSource = new EventSource("http://localhost:3001/sse");
+  const eventSource = new EventSource("http://172.29.58.140:3001/sse");
 
   eventSource.onopen = () => {
     console.log("✅ Connected to SSE stream");

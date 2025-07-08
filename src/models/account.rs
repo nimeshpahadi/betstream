@@ -6,10 +6,11 @@ use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrokerEvent {
-    pub pk: i64,
-    pub account_id: i64,
-    pub batch_id: i64,
-    pub bet_id: i64,
+    pub id: Option<i64>,
+    pub pk: Option<i64>,
+    pub account_id: Option<i64>,
+    pub batch_id: Option<i64>,
+    pub bet_id: Option<i64>,
     pub event: String,
 }
 

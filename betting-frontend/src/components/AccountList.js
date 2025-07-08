@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  User, Calendar, Clock, DollarSign, Target,
+  User, Calendar, DollarSign, Target,
   CheckCircle, XCircle, Package, Menu
 } from 'lucide-react';
 import {
@@ -56,8 +56,13 @@ export default function AccountBatchesUI() {
 
     const es = subscribeToAccountEvents(
       (newAccount) => {
-        setAccounts(prev => prev.some(acc => acc.id === newAccount.id) ? prev : [newAccount, ...prev]);
-        setAccountId(newAccount.id);
+        if (!newAccount.account_id) return;
+        setAccounts(prev =>
+        prev.some(acc => acc.id === newAccount.account_id)
+            ? prev
+            : [ { ...newAccount, id: newAccount.account_id }, ...prev ]
+        );
+        setAccountId(newAccount.account_id);
       },
       (deletedId) => {
         setAccounts(prev => {

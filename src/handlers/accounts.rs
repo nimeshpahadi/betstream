@@ -39,23 +39,117 @@ pub struct AppState {
 pub async fn sse_handler(
     State(state): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let db = state.pool.clone();
     let rx = state.event_sender.subscribe();
+
     let event_stream = BroadcastStream::new(rx)
-        .filter_map(|result| {
-            match result {
-                Ok(broker_event) => {
-                    let event_name = broker_event.event.clone();
-                    let data = match serde_json::to_string(&broker_event) {
-                        Ok(json) => json,
-                        Err(_) => return None,
-                    };
-                    Some(Ok(Event::default()
+        .then(move |result| {
+            let db = db.clone();
+            async move {
+                let event = match result {
+                    Ok(e) => e,
+                    Err(_) => return None,
+                };
+
+                let event_name = event.event.clone();
+
+                let payload_result = match event_name.as_str() {
+                    "account_created" | "account_updated" => {
+                        if let Some(account_id) = event.account_id {
+                            sqlx::query_as::<_, Account>("SELECT * FROM accounts WHERE id = ?")
+                                .bind(account_id)
+                                .fetch_one(&db)
+                                .await
+                                .ok()
+                                .and_then(|acc| serde_json::to_string(&acc).ok())
+                        } else {
+                            None
+                        }
+                    }
+
+                    "account_deleted" => {
+                        Some(serde_json::json!({ "id": event.pk }).to_string())
+                    }
+
+                    "batch_created" | "batch_updated" => {
+                        if let (Some(batch_id), Some(account_id)) = (event.batch_id, event.account_id) {
+                            let batch_opt = sqlx::query_as::<_, Batch>(
+                                "SELECT * FROM batches WHERE id = ? AND account_id = ?"
+                            )
+                            .bind(batch_id)
+                            .bind(account_id)
+                            .fetch_one(&db)
+                            .await
+                            .ok();
+
+                            if let Some(batch) = batch_opt {
+                                let bets = sqlx::query_as::<_, Bet>(
+                                    "SELECT * FROM bets WHERE batch_id = ? ORDER BY id"
+                                )
+                                .bind(batch.id)
+                                .fetch_all(&db)
+                                .await
+                                .unwrap_or_default();
+
+                                let response = serde_json::json!({
+                                    "id": batch.id,
+                                    "account_id": batch.account_id,
+                                    "completed": batch.completed,
+                                    "created_at": batch.created_at,
+                                    "updated_at": batch.updated_at,
+                                    "meta": batch.meta,
+                                    "bets": bets,
+                                });
+
+                                Some(response.to_string())
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    }
+
+                    "batch_deleted" => {
+                        Some(serde_json::json!({
+                            "id": event.batch_id,
+                            "account_id": event.account_id
+                        }).to_string())
+                    }
+
+                    "bet_status_updated" => {
+                        if let Some(bet_id) = event.bet_id {
+                            sqlx::query_as::<_, Bet>("SELECT * FROM bets WHERE pid = ?")
+                                .bind(bet_id)
+                                .fetch_one(&db)
+                                .await
+                                .ok()
+                                .and_then(|bet| serde_json::to_string(&bet).ok())
+                        } else {
+                            None
+                        }
+                    }
+
+                    "batch_canceled" => {
+                        Some(serde_json::json!({
+                            "account_id": event.account_id,
+                            "batch_id": event.batch_id
+                        }).to_string())
+                    }
+
+                    _ => {
+                        serde_json::to_string(&event).ok()
+                    }
+                };
+
+                payload_result.map(|data| {
+                    Ok(Event::default()
                         .event(event_name)
-                        .data(data)))
-                }
-                Err(_) => None,
+                        .data(data))
+                })
             }
-        });
+        })
+        .filter_map(|e| async move { e });
 
     let heartbeat = stream::repeat_with(|| {
         Ok(Event::default()
@@ -67,7 +161,7 @@ pub async fn sse_handler(
     let combined_stream = stream::select(event_stream, heartbeat);
 
     Sse::new(combined_stream).keep_alive(
-        axum::response::sse::KeepAlive::new()
+        KeepAlive::new()
             .interval(Duration::from_secs(10))
             .text("keep-alive"),
     )
@@ -127,10 +221,9 @@ pub async fn create_account(
     })?;
 
     let event = BrokerEvent {
+        id: Some(chrono::Utc::now().timestamp_millis()),
         pk: Some(account.id),
-        id: Some(account.id),
-        name: Some(account.name.clone()),
-        hostname: Some(account.hostname.clone()),
+        account_id: Some(account.id),
         batch_id: None,
         bet_id: None,
         event: "account_created".to_string(),
@@ -173,10 +266,9 @@ pub async fn update_account(
     })?;
 
     let event = BrokerEvent {
+        id: Some(chrono::Utc::now().timestamp_millis()),
         pk: Some(account.id),
-        id: Some(account.id),
-        name: Some(account.name.clone()),
-        hostname: Some(account.hostname.clone()),
+        account_id: Some(account.id),
         batch_id: None,
         bet_id: None,
         event: "account_updated".to_string(),
@@ -208,10 +300,9 @@ pub async fn delete_account(
         })?;
 
     let event = BrokerEvent {
+        id: Some(chrono::Utc::now().timestamp_millis()),
         pk: Some(account_id),
-        id: Some(account_id),
-        name: None,
-        hostname: None,
+        account_id: Some(account_id),
         batch_id: None,
         bet_id: None,
         event: "account_deleted".to_string(),
@@ -285,10 +376,9 @@ pub async fn create_batch(
     })?;
 
     let event = BrokerEvent {
+        id: Some(chrono::Utc::now().timestamp_millis()),
         pk: Some(batch.id),
-        id: Some(account_id),
-        name: None,
-        hostname: None,
+        account_id: Some(account_id),
         batch_id: Some(batch.id),
         bet_id: None,
         event: "batch_created".to_string(),
@@ -412,10 +502,9 @@ pub async fn update_account_batch_bets(
     })?;
 
     let _ = state.event_sender.send(BrokerEvent {
+        id: Some(chrono::Utc::now().timestamp_millis()),
         pk: Some(batch_id),
-        id: Some(account_id),
-        name: None,
-        hostname: None,
+        account_id: Some(account_id),
         batch_id: Some(batch_id),
         bet_id: None,
         event: "batch_updated".to_string(),
@@ -463,10 +552,9 @@ pub async fn update_account_batch_bet(
 
     // Emit SSE
     let event = BrokerEvent {
+        id: Some(chrono::Utc::now().timestamp_millis()),
         pk: Some(bet_id),
-        id: Some(account_id),
-        name: None,
-        hostname: None,
+        account_id: Some(account_id),
         batch_id: Some(batch_id),
         bet_id: Some(bet_id),
         event: "bet_status_updated".to_string(),
@@ -509,10 +597,9 @@ pub async fn delete_account_batch(
 
     // Send event
     let _ = state.event_sender.send(BrokerEvent {
+        id: Some(chrono::Utc::now().timestamp_millis()),
         pk: Some(batch_id),
-        id: Some(account_id),
-        name: None,
-        hostname: None,
+        account_id: Some(account_id),
         batch_id: Some(batch_id),
         bet_id: None,
         event: "batch_deleted".to_string(),
@@ -562,11 +649,10 @@ pub async fn cancel_batch(
     })?;
 
     let _ = state.event_sender.send(BrokerEvent {
+        id: None,
         pk: None,
-        id: Some(account_id),
-        name: None,
-        hostname: None,
-        batch_id: Some(batch_id),
+        account_id: None,
+        batch_id: None,
         bet_id: None,
         event: "batch_canceled".to_string(),
     });
