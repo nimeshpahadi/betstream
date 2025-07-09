@@ -19,6 +19,16 @@ import {
   cancelBatch,
 } from "../api/accounts";
 
+
+function formatSelection(selection) {
+  const trimmed = selection.split("**")[0].trim();
+  return trimmed
+    .split("/")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
 function BetStatusSelector({ bet, onChange }) {
   return (
     <div className="flex justify-center items-center space-x-4">
@@ -394,10 +404,21 @@ export default function AccountBatchesUI() {
                           }`}
                         >
                           <td className="px-4 py-2">{bet.id}</td>
-                          <td className="px-4 py-2">{bet.selection}</td>
+                          <td className="px-4 py-2 w-64">
+                            <details className="bg-gray-800 border border-gray-700 rounded-md">
+                              <summary className="text-white font-medium truncate whitespace-nowrap overflow-hidden">
+                                {bet.selection}
+                              </summary>
+                              <div className="p-2">
+                                <pre className="whitespace-pre-line text-sm text-gray-300 break-words">
+                                  {formatSelection(bet.selection)}
+                                </pre>
+                              </div>
+                            </details>
+                          </td>
                           <td className="px-4 py-2">${bet.stake}</td>
                           <td className="px-4 py-2">${bet.cost}</td>
-                          <td className="px-4 py-2 capitalize">{bet.status}</td>
+                          <td className="px-4 py-2">{bet.status}</td>
                           <td className="px-4 py-2">
                             <BetStatusSelector
                               bet={bet}

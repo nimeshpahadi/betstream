@@ -2,7 +2,6 @@ import axios from "axios";
 
 const BASE_URL = "/api/v1/accounts";
 
-// REST APIs
 export const getAccounts = async () => {
   const response = await axios.get(BASE_URL);
   return response.data;
@@ -54,7 +53,6 @@ export const cancelBatch = async (accountId, batchId, bets = []) => {
   return response.data;
 };
 
-// SSE Subscription
 export const subscribeToAccountEvents = (
   onAccountCreated,
   onAccountDeleted,
@@ -95,7 +93,6 @@ export const subscribeToAccountEvents = (
   eventSource.addEventListener("batch_created", (event) => {
     try {
       const batchData = JSON.parse(event.data);
-      console.log("📦 batch_created:", batchData);
       onBatchCreated?.(batchData);
     } catch (err) {
       console.error("Failed to parse batch_created event:", err);
