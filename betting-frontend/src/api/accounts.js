@@ -45,14 +45,6 @@ export const submitBatch = async (accountId, batchId) => {
   return response.data;
 };
 
-export const cancelBatch = async (accountId, batchId, bets = []) => {
-  const response = await axios.patch(
-    `${BASE_URL}/${accountId}/batches/${batchId}/bets`,
-    { bets }
-  );
-  return response.data;
-};
-
 export const subscribeToAccountEvents = (
   onAccountCreated,
   onAccountDeleted,

@@ -16,7 +16,6 @@ import {
   subscribeToAccountEvents,
   updateBetStatus,
   submitBatch,
-  cancelBatch,
 } from "../api/accounts";
 
 
@@ -206,11 +205,6 @@ export default function AccountBatchesUI() {
     } catch (err) {
       console.error("Failed to submit batch", err);
     }
-  };
-
-  const handleCancelBatch = () => {
-    if (!selectedBatch || !accountId) return;
-    cancelBatch(accountId, selectedBatch.id);
   };
 
   if (loading)
@@ -432,20 +426,9 @@ export default function AccountBatchesUI() {
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex gap-3 justify-end mt-4">
-                  <button
-                    onClick={handleSubmitBatch}
-                    disabled={selectedBatch.completed}
-                    className="bg-green-700 px-4 py-2 rounded-md hover:bg-green-600 disabled:bg-gray-700"
-                  >
-                    Submit Batch
-                  </button>
-                  <button
-                    onClick={handleCancelBatch}
-                    disabled={selectedBatch.completed}
-                    className="bg-red-700 px-4 py-2 rounded-md hover:bg-red-600 disabled:bg-gray-700"
-                  >
-                    Cancel Batch
+                <div className="flex justify-end space-x-4">
+                  <button onClick={handleSubmitBatch} className="bg-green-700 text-white px-2 py-1 rounded-md hover:bg-green-800">
+                    Submit
                   </button>
                 </div>
               </div>
