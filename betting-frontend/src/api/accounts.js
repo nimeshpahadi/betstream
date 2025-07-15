@@ -52,7 +52,7 @@ export const subscribeToAccountEvents = (
   onPing,
   onBetStatusUpdated
 ) => {
-  const SSE_URL = "http://localhost:3001/sse";
+  const SSE_URL = "/sse";
   const eventSource = new EventSource(SSE_URL);
 
   eventSource.onopen = () => {
