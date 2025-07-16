@@ -2,15 +2,18 @@
     handle_path /api/* {
         reverse_proxy backend:3001
     }
-
+    
     handle_path /sse {
         reverse_proxy backend:3001 {
             flush_interval -1
             header_up Host {host}
             header_up Connection keep-alive
+            header_up Cache-Control no-cache
+            header_up Accept text/event-stream
+            header_down -Server
         }
     }
-
+    
     root * /usr/share/caddy
     try_files {path} /index.html
     file_server

@@ -32,6 +32,6 @@ WORKDIR /usr/local/bin
 
 COPY --from=builder /app/target/release/betting-api ./manualbettingserver
 
-EXPOSE 8000
+EXPOSE 3001
 
-CMD ["./manualbettingserver", "--address", "0.0.0.0:8000", "--dsn", "file:/data/manual-betting-server.sqlite?mode=rwc&cache=shared&_fk=1"]
+CMD ["./manualbettingserver"]
