@@ -1,25 +1,44 @@
 version: '3.8'
 
 services:
+  caddy:
+    build:
+      context: .
+      dockerfile: betting-frontend/Dockerfile
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./betting-frontend/build:/usr/share/caddy:ro
+      - ./betting-frontend/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - app-network
+    depends_on:
+      - backend
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: backend
+    restart: unless-stopped
     ports:
       - "3001:3001"
+    volumes:
+      - ./data:/data
+    environment:
+      - DATABASE_URL=sqlite:/data/manual-betting-server.db?mode=rwc
     networks:
-      - appnet
-
-  frontend:
-    build:
-      context: .
-      dockerfile: betting-frontend/Dockerfile
-    ports:
-      - "3000:80"
-    networks:
-      - appnet
-    depends_on:
-      - backend
+      - app-network
 
 networks:
-  appnet:
+  app-network:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

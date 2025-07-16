@@ -6,7 +6,6 @@ COPY betting-frontend/package*.json ./
 RUN npm ci
 
 COPY betting-frontend/ ./
-
 RUN npm run build
 
 FROM caddy:2.8-alpine
