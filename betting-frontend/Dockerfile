@@ -1,5 +1,3 @@
-# betting-frontend/Dockerfile
-
 FROM node:20-alpine AS builder
 
 WORKDIR /app
@@ -11,10 +9,10 @@ COPY betting-frontend/ ./
 
 RUN npm run build
 
-FROM nginx:alpine
+FROM caddy:2.8-alpine
 
-COPY --from=builder /app/build /usr/share/nginx/html
-COPY betting-frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/build /usr/share/caddy
+COPY betting-frontend/Caddyfile /etc/caddy/Caddyfile
 
 EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile"]

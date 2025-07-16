@@ -1,0 +1,15 @@
+:80 {
+    root * /usr/share/caddy
+    file_server
+    try_files {path} /index.html
+
+    handle /api/* {
+        reverse_proxy backend:3001
+    }
+
+    handle /sse/* {
+        reverse_proxy backend:3001 {
+            flush_interval -1
+        }
+    }
+}
