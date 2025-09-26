@@ -70,36 +70,50 @@ pub async fn sse_handler(
                         Some(serde_json::json!({ "id": event.pk }).to_string())
                     }
                     "batch_created" | "batch_deleted" => {
-                        // First get the batch
-                        let batch = sqlx::query_as::<_, Batch>(
-                            "SELECT * FROM batches WHERE id = ?",
-                        )
-                        .bind(event.pk)
-                        .fetch_one(&db)
-                        .await
-                        .ok()?;
+                        if event_name == "batch_deleted" {
+                            // For deleted batches, create minimal response since batch may not exist in DB
+                            let batch_response = BatchResponse {
+                                id: event.pk.unwrap_or(0),
+                                completed: true,
+                                created_at: chrono::Utc::now().to_rfc3339(),
+                                updated_at: chrono::Utc::now().to_rfc3339(),
+                                meta: serde_json::json!({}),
+                                account_id: event.account_id.unwrap_or(0),
+                                bets: vec![],
+                            };
+                            serde_json::to_string(&batch_response).ok()
+                        } else {
+                            // First get the batch
+                            let batch = sqlx::query_as::<_, Batch>(
+                                "SELECT * FROM batches WHERE id = ?",
+                            )
+                            .bind(event.pk)
+                            .fetch_one(&db)
+                            .await
+                            .ok()?;
 
-                        // Then get the bets for this batch
-                        let bets = sqlx::query_as::<_, Bet>(
-                            "SELECT * FROM bets WHERE batch_id = ? ORDER BY id",
-                        )
-                        .bind(event.pk)
-                        .fetch_all(&db)
-                        .await
-                        .unwrap_or_default();
+                            // Then get the bets for this batch
+                            let bets = sqlx::query_as::<_, Bet>(
+                                "SELECT * FROM bets WHERE batch_id = ? ORDER BY id",
+                            )
+                            .bind(event.pk)
+                            .fetch_all(&db)
+                            .await
+                            .unwrap_or_default();
 
-                        // Create a BatchResponse object to send
-                        let batch_response = BatchResponse {
-                            id: batch.id,
-                            completed: batch.completed,
-                            created_at: batch.created_at.to_rfc3339(),
-                            updated_at: batch.updated_at.to_rfc3339(),
-                            meta: batch.meta,
-                            account_id: batch.account_id,
-                            bets,
-                        };
+                            // Create a BatchResponse object to send
+                            let batch_response = BatchResponse {
+                                id: batch.id,
+                                completed: batch.completed,
+                                created_at: batch.created_at.to_rfc3339(),
+                                updated_at: batch.updated_at.to_rfc3339(),
+                                meta: batch.meta,
+                                account_id: batch.account_id,
+                                bets,
+                            };
 
-                        serde_json::to_string(&batch_response).ok()
+                            serde_json::to_string(&batch_response).ok()
+                        }
                     }
                     "bet_status_updated" => {
                         let row = sqlx::query_as::<_, Bet>(
@@ -263,6 +277,19 @@ pub async fn delete_account(
     State(state): State<AppState>,
     Path(account_id): Path<i64>,
 ) -> Result<StatusCode, StatusCode> {
+    // Get batches before deletion (for SSE events)
+    let batches = sqlx::query_as::<_, Batch>(
+        "SELECT * FROM batches WHERE account_id = ?",
+    )
+    .bind(account_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error fetching batches: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Delete account (cascade will handle batches and bets)
     sqlx::query("DELETE FROM accounts WHERE id = ?")
         .bind(account_id)
         .execute(&state.pool)
@@ -272,6 +299,19 @@ pub async fn delete_account(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
+    // Send events for cascaded batch deletions
+    for batch in batches {
+        let _ = state.event_sender.send(BrokerEvent {
+            id: Some(chrono::Utc::now().timestamp_millis()),
+            pk: Some(batch.id),
+            account_id: Some(account_id),
+            batch_id: Some(batch.id),
+            bet_id: None,
+            event: "batch_deleted".to_string(),
+        });
+    }
+
+    // Send account deleted event
     let event = BrokerEvent {
         id: Some(chrono::Utc::now().timestamp_millis()),
         pk: Some(account_id),

@@ -100,13 +100,23 @@ export default function AccountBatchesUI() {
       (deletedId) => {
         setAccounts((prev) => {
           const filtered = prev.filter((acc) => acc.id !== deletedId);
-          setAccountId((prevId) =>
-            prevId === deletedId ? (filtered[0]?.id ?? null) : prevId
-          );
+          setAccountId((prevId) => {
+            if (prevId === deletedId) {
+              setBatches([]);
+              setSelectedBatchId(null);
+              return filtered[0]?.id ?? null;
+            }
+            return prevId;
+          });
           return filtered;
         });
       },
       (batchData) => {
+        // Switch to account if batch created for different account
+        if (batchData.account_id !== accountIdRef.current && !batchData.completed) {
+          setAccountId(batchData.account_id);
+        }
+        
         if (batchData.account_id === accountIdRef.current) {
           if (!batchData.completed) {
             setBatches((prev) => {
@@ -116,6 +126,12 @@ export default function AccountBatchesUI() {
               }
               return [batchData, ...prev];
             });
+          } else {
+            // Remove deleted batches
+            setBatches((prev) => prev.filter((b) => b.id !== batchData.id));
+            if (selectedBatchIdRef.current === batchData.id) {
+              setSelectedBatchId(null);
+            }
           }
         }
       },
@@ -140,7 +156,13 @@ export default function AccountBatchesUI() {
   }, []);
 
   useEffect(() => {
-    if (!accountId) return;
+    if (!accountId) {
+      setAccount(null);
+      setBatches([]);
+      setSelectedBatchId(null);
+      setLoading(false);
+      return;
+    }
     const fetchData = async () => {
       setLoading(true);
       setError(null);
