@@ -13,17 +13,7 @@ use std::{convert::Infallible, time::Duration};
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::{BroadcastStream, IntervalStream};
 use tokio_stream::StreamExt;
-use crate::models::account::{
-    Account,
-    CreateAccountRequest,
-    BetUpdateRequest,
-    UpdateBetStatusRequest,
-    BatchResponse,
-    CreateBatchRequest,
-    Batch,
-    Bet,
-    BrokerEvent
-};
+use crate::models::account::*;
 
 
 // Global event broadcaster
@@ -531,39 +521,24 @@ pub async fn update_account_batch_bet(
     State(state): State<AppState>,
     Json(payload): Json<UpdateBetStatusRequest>,
 ) -> Result<Json<Bet>, StatusCode> {
-    let mut tx = state.pool.begin().await.map_err(|e| {
-        eprintln!("Transaction begin error: {}", e);
+    let updated_bet = sqlx::query_as::<_, Bet>(
+        r#"
+        UPDATE bets 
+        SET status = ? 
+        WHERE pid = ? AND batch_id = ? 
+        RETURNING pid, id, selection, stake, cost, status, batch_id
+        "#
+    )
+    .bind(payload.status.to_string())
+    .bind(bet_id)
+    .bind(batch_id)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to update bet: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let updated_bet = match payload.status.to_lowercase().as_str() {
-        "pending" | "successful" | "failed" => {
-            let query = format!(
-                "UPDATE bets SET status = '{}' WHERE pid = ? AND batch_id = ? RETURNING pid, id, selection, stake, cost, status, batch_id",
-                payload.status.to_lowercase()
-            );
-            sqlx::query_as::<_, Bet>(&query)
-                .bind(bet_id)
-                .bind(batch_id)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|e| {
-                    eprintln!("Failed to update bet: {}", e);
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?
-        }
-        other => {
-            eprintln!("Invalid status value: {}", other);
-            return Err(StatusCode::BAD_REQUEST);
-        }
-    };
-
-    tx.commit().await.map_err(|e| {
-        eprintln!("Transaction commit error: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    // Emit SSE
     let event = BrokerEvent {
         id: Some(chrono::Utc::now().timestamp_millis()),
         pk: Some(bet_id),
@@ -582,33 +557,22 @@ pub async fn delete_account_batch(
     State(state): State<AppState>,
     Path((account_id, batch_id)): Path<(i64, i64)>,
 ) -> Result<(), StatusCode> {
-    let mut tx = state.pool.begin().await.map_err(|e| {
-        eprintln!("Transaction begin error: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    // Only soft delete batch by marking completed
     sqlx::query(
         r#"
-        UPDATE batches SET completed = 1, updated_at = datetime('now')
+        UPDATE batches 
+        SET completed = 1, updated_at = datetime('now')
         WHERE id = ? AND account_id = ?
         "#,
     )
     .bind(batch_id)
     .bind(account_id)
-    .execute(&mut *tx)
+    .execute(&state.pool)
     .await
     .map_err(|e| {
         eprintln!("Failed to mark batch as completed: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    tx.commit().await.map_err(|e| {
-        eprintln!("Transaction commit error: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    // Send event
     let _ = state.event_sender.send(BrokerEvent {
         id: Some(chrono::Utc::now().timestamp_millis()),
         pk: Some(batch_id),

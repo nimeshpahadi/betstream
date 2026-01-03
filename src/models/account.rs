@@ -2,7 +2,43 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::FromRow;
 use chrono::{DateTime, Utc};
+use std::str::FromStr;
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum BetStatus {
+    Pending,
+    Successful,
+    Failed,
+}
+
+impl std::fmt::Display for BetStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BetStatus::Pending => write!(f, "pending"),
+            BetStatus::Successful => write!(f, "successful"),
+            BetStatus::Failed => write!(f, "failed"),
+        }
+    }
+}
+
+impl FromStr for BetStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "pending" => Ok(BetStatus::Pending),
+            "successful" => Ok(BetStatus::Successful),
+            "failed" => Ok(BetStatus::Failed),
+            _ => Err(format!("Invalid bet status: {}", s)),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateBetStatusRequest {
+    pub status: BetStatus,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrokerEvent {
@@ -32,11 +68,6 @@ pub struct CreateAccountRequest {
 #[derive(Deserialize)]
 pub struct BetUpdateRequest {
     pub pid: i64,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateBetStatusRequest {
-    pub status: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
