@@ -82,7 +82,7 @@ export const subscribeToAccountEvents = (
     }
   });
 
-  eventSource.addEventListener("batch_created", (event) => {
+  eventSource.addEventListener("batch_completed", (event) => {
     try {
       const batchData = JSON.parse(event.data);
       onBatchCreated?.(batchData);

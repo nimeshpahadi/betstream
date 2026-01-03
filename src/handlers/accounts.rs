@@ -59,8 +59,8 @@ pub async fn sse_handler(
                     "account_deleted" => {
                         Some(serde_json::json!({ "id": event.pk }).to_string())
                     }
-                    "batch_created" | "batch_deleted" => {
-                        if event_name == "batch_deleted" {
+                    "batch_created" | "batch_completed" => {
+                        if event_name == "batch_completed" {
                             // For deleted batches, create minimal response since batch may not exist in DB
                             let batch_response = BatchResponse {
                                 id: event.pk.unwrap_or(0),
@@ -261,62 +261,6 @@ pub async fn update_account(
     );
 
     Ok(Json(account))
-}
-
-pub async fn delete_account(
-    State(state): State<AppState>,
-    Path(account_id): Path<i64>,
-) -> Result<StatusCode, StatusCode> {
-    // Get batches before deletion (for SSE events)
-    let batches = sqlx::query_as::<_, Batch>(
-        "SELECT * FROM batches WHERE account_id = ?",
-    )
-    .bind(account_id)
-    .fetch_all(&state.pool)
-    .await
-    .map_err(|e| {
-        eprintln!("Database error fetching batches: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    // Delete account (cascade will handle batches and bets)
-    sqlx::query("DELETE FROM accounts WHERE id = ?")
-        .bind(account_id)
-        .execute(&state.pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error deleting account: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    // Send events for cascaded batch deletions
-    for batch in batches {
-        let _ = state.event_sender.send(BrokerEvent {
-            id: Some(chrono::Utc::now().timestamp_millis()),
-            pk: Some(batch.id),
-            account_id: Some(account_id),
-            batch_id: Some(batch.id),
-            bet_id: None,
-            event: "batch_deleted".to_string(),
-        });
-    }
-
-    // Send account deleted event
-    let event = BrokerEvent {
-        id: Some(chrono::Utc::now().timestamp_millis()),
-        pk: Some(account_id),
-        account_id: Some(account_id),
-        batch_id: None,
-        bet_id: None,
-        event: "account_deleted".to_string(),
-    };
-
-    if let Err(e) = state.event_sender.send(event) {
-        eprintln!("Failed to send event: {}", e);
-    }
-
-    println!("Account deleted - ID: {}", account_id);
-    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn create_batch(
@@ -553,15 +497,15 @@ pub async fn update_account_batch_bet(
     Ok(Json(updated_bet))
 }
 
-pub async fn delete_account_batch(
+pub async fn complete_account_batch(
     State(state): State<AppState>,
     Path((account_id, batch_id)): Path<(i64, i64)>,
 ) -> Result<(), StatusCode> {
-    sqlx::query(
+    let result = sqlx::query(
         r#"
         UPDATE batches 
         SET completed = 1, updated_at = datetime('now')
-        WHERE id = ? AND account_id = ?
+        WHERE id = ? AND account_id = ? AND completed = 0
         "#,
     )
     .bind(batch_id)
@@ -573,15 +517,56 @@ pub async fn delete_account_batch(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    if result.rows_affected() == 0 {
+            return Err(StatusCode::NOT_FOUND);
+        }
+
     let _ = state.event_sender.send(BrokerEvent {
         id: Some(chrono::Utc::now().timestamp_millis()),
         pk: Some(batch_id),
         account_id: Some(account_id),
         batch_id: Some(batch_id),
         bet_id: None,
-        event: "batch_deleted".to_string(),
+        event: "batch_completed".to_string(),
     });
 
     Ok(())
 }
 
+pub async fn delete_account(
+    State(state): State<AppState>,
+    Path(account_id): Path<i64>,
+) -> Result<StatusCode, StatusCode> {
+    // Delete account (CASCADE will handle batches and bets automatically)
+    let result = sqlx::query("DELETE FROM accounts WHERE id = ?")
+        .bind(account_id)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Database error deleting account: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    // Check if account existed
+    if result.rows_affected() == 0 {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // Send account_deleted event
+    // Frontend handles cascade by clearing batches automatically
+    let event = BrokerEvent {
+        id: Some(chrono::Utc::now().timestamp_millis()),
+        pk: Some(account_id),
+        account_id: Some(account_id),
+        batch_id: None,
+        bet_id: None,
+        event: "account_deleted".to_string(),
+    };
+
+    if let Err(e) = state.event_sender.send(event) {
+        eprintln!("Failed to send event: {}", e);
+    }
+
+    println!("Account deleted - ID: {} (cascaded batches and bets)", account_id);
+    Ok(StatusCode::NO_CONTENT)
+}
