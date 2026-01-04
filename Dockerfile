@@ -26,12 +26,27 @@ RUN cargo build --release
 # ---------- Runtime Stage ----------
 FROM alpine:3.19
 
-RUN apk add --no-cache tzdata
+RUN apk add --no-cache bash curl tzdata
 
 WORKDIR /usr/local/bin
 
 COPY --from=builder /app/target/release/betting-api ./manualbettingserver
 
+# Copy seed script
+COPY ./data/seed.sh /data/seed.sh
+RUN chmod +x /data/seed.sh
+
 EXPOSE 3001
 
-CMD ["./manualbettingserver"]
+#CMD ["./manualbettingserver"]
+
+# CMD: start backend in background, wait until ready, run seed, keep backend running
+CMD bash -c '\
+    ./manualbettingserver & \
+    BACKEND_PID=$!; \
+    echo "⏳ Waiting for backend to start..."; \
+    until curl -s http://localhost:3001/api/v1/accounts >/dev/null 2>&1; do sleep 1; done; \
+    echo "✅ Backend ready. Running seeder..."; \
+    /data/seed.sh; \
+    wait $BACKEND_PID \
+'

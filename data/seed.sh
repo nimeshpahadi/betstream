@@ -1,6 +1,7 @@
 #!/bin/bash
 
-BASE_URL="http://localhost:3001/api/v1"
+BASE_URL="http://backend:3001/api/v1"
+#BASE_URL="http://localhost:3001/api/v1"
 
 echo "🎲 Starting data population for Betting API..."
 echo ""
