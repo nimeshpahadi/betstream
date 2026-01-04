@@ -4,6 +4,7 @@ use sqlx::FromRow;
 use chrono::{DateTime, Utc};
 use std::str::FromStr;
 
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum BetStatus {
@@ -41,16 +42,53 @@ pub struct UpdateBetStatusRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BrokerEvent {
-    pub id: Option<i64>,
-    pub pk: Option<i64>,
-    pub account_id: Option<i64>,
-    pub batch_id: Option<i64>,
-    pub bet_id: Option<i64>,
-    pub event: String,
+#[serde(tag = "type")]
+pub enum BrokerEvent {
+    #[serde(rename = "account_created")]
+    AccountCreated { account: Account },
+    
+    #[serde(rename = "account_updated")]
+    AccountUpdated { account: Account },
+    
+    #[serde(rename = "account_deleted")]
+    AccountDeleted { id: i64 },
+    
+    #[serde(rename = "batch_created")]
+    BatchCreated { batch: BatchResponse },
+    
+    #[serde(rename = "batch_completed")]
+    BatchCompleted { 
+        id: i64, 
+        account_id: i64,
+    },
+    
+    #[serde(rename = "bet_status_updated")]
+    BetStatusUpdated { bet: Bet },
+    
+    #[serde(rename = "batch_bets_updated")]
+    BatchBetsUpdated { 
+        batch_id: i64,
+        account_id: i64,
+        bets: Vec<Bet>,
+    },
 }
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+impl BrokerEvent {
+    // Helper to extract event name for SSE
+    pub fn event_name(&self) -> &str {
+        match self {
+            Self::AccountCreated { .. } => "account_created",
+            Self::AccountUpdated { .. } => "account_updated",
+            Self::AccountDeleted { .. } => "account_deleted",
+            Self::BatchCreated { .. } => "batch_created",
+            Self::BatchCompleted { .. } => "batch_completed",
+            Self::BetStatusUpdated { .. } => "bet_status_updated",
+            Self::BatchBetsUpdated { .. } => "batch_bets_updated",
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
 pub struct Account {
     pub id: i64,
     pub name: String,
@@ -105,28 +143,7 @@ pub struct Bet {
     pub batch_id: i64,
 }
 
-// Request/Response DTOs
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BatchUpload {
-    #[serde(flatten)]
-    pub batch: BatchData,
-    pub bets: Vec<BetData>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BatchData {
-    pub meta: JsonValue,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BetData {
-    pub id: i64,
-    pub selection: String,
-    pub stake: f64,
-    pub cost: f64,
-}
-
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BatchResponse {
     pub id: i64,
     pub completed: bool,

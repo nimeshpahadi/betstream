@@ -65,8 +65,8 @@ export const subscribeToAccountEvents = (
 
   eventSource.addEventListener("account_created", (event) => {
     try {
-      const account = JSON.parse(event.data);
-      onAccountCreated?.(account);
+      const payload = JSON.parse(event.data);
+      onAccountCreated?.(payload.account);
     } catch (err) {
       console.error("Failed to parse account_created event:", err);
     }
@@ -75,26 +75,35 @@ export const subscribeToAccountEvents = (
   eventSource.addEventListener("account_deleted", (event) => {
     try {
       const payload = JSON.parse(event.data);
-      const deletedId = payload.id ?? payload.pk;
-      if (deletedId) onAccountDeleted?.(deletedId);
+      onAccountDeleted?.(payload.id);
     } catch (err) {
       console.error("Failed to parse account_deleted event:", err);
     }
   });
 
-  eventSource.addEventListener("batch_completed", (event) => {
+  eventSource.addEventListener("batch_created", (event) => {
     try {
-      const batchData = JSON.parse(event.data);
-      onBatchCreated?.(batchData);
+      const payload = JSON.parse(event.data);
+      onBatchCreated?.(payload.batch);
     } catch (err) {
       console.error("Failed to parse batch_created event:", err);
     }
   });
 
+  eventSource.addEventListener("batch_completed", (event) => {
+    try {
+      const payload = JSON.parse(event.data);
+      // Mark as completed for filtering
+      onBatchCreated?.({ ...payload, completed: true });
+    } catch (err) {
+      console.error("Failed to parse batch_completed event:", err);
+    }
+  });
+
   eventSource.addEventListener("bet_status_updated", (event) => {
     try {
-      const updatedBet = JSON.parse(event.data);
-      onBetStatusUpdated?.(updatedBet);
+      const payload = JSON.parse(event.data);
+      onBetStatusUpdated?.(payload.bet);
     } catch (err) {
       console.error("Failed to parse bet_status_updated event:", err);
     }

@@ -8,11 +8,12 @@ use axum::{
     Json as JsonExtract,
 };
 use futures::stream::Stream;
+use futures::StreamExt;
 use sqlx::SqlitePool;
 use std::{convert::Infallible, time::Duration};
 use tokio::sync::broadcast;
-use tokio_stream::wrappers::{BroadcastStream, IntervalStream};
-use tokio_stream::StreamExt;
+use tokio_stream::wrappers::{BroadcastStream};
+//use tokio_stream::StreamExt;
 use crate::models::account::*;
 
 
@@ -30,116 +31,31 @@ pub struct AppState {
 pub async fn sse_handler(
     axum::extract::State(state): axum::extract::State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let db = state.pool.clone();
     let rx = state.event_sender.subscribe();
-
+    
     let event_stream = BroadcastStream::new(rx)
-        .then(move |result| {
-            let db = db.clone();
-            async move {
-                let event = match result {
-                    Ok(e) => e,
-                    Err(_) => return None,
-                };
+        .then(|result| async move {
+            let event = result.ok()?;
+            let event_name = event.event_name();
+            
+            // Serialize the event data
+            let data = match serde_json::to_string(&event) {
+                Ok(json) => json,
+                Err(e) => {
+                    eprintln!("Failed to serialize event: {}", e);
+                    return None;
+                }
+            };
 
-                let event_name = event.event.clone();
-
-                let payload = match event_name.as_str() {
-                    "account_created" | "account_updated" => {
-                        let row = sqlx::query_as::<_, Account>(
-                            "SELECT * FROM accounts WHERE id = ?",
-                        )
-                        .bind(event.account_id)
-                        .fetch_one(&db)
-                        .await
-                        .ok()?;
-                        serde_json::to_string(&row).ok()
-                    }
-
-                    "account_deleted" => {
-                        Some(serde_json::json!({ "id": event.pk }).to_string())
-                    }
-                    "batch_created" | "batch_completed" => {
-                        if event_name == "batch_completed" {
-                            // For deleted batches, create minimal response since batch may not exist in DB
-                            let batch_response = BatchResponse {
-                                id: event.pk.unwrap_or(0),
-                                completed: true,
-                                created_at: chrono::Utc::now().to_rfc3339(),
-                                updated_at: chrono::Utc::now().to_rfc3339(),
-                                meta: serde_json::json!({}),
-                                account_id: event.account_id.unwrap_or(0),
-                                bets: vec![],
-                            };
-                            serde_json::to_string(&batch_response).ok()
-                        } else {
-                            // First get the batch
-                            let batch = sqlx::query_as::<_, Batch>(
-                                "SELECT * FROM batches WHERE id = ?",
-                            )
-                            .bind(event.pk)
-                            .fetch_one(&db)
-                            .await
-                            .ok()?;
-
-                            // Then get the bets for this batch
-                            let bets = sqlx::query_as::<_, Bet>(
-                                "SELECT * FROM bets WHERE batch_id = ? ORDER BY id",
-                            )
-                            .bind(event.pk)
-                            .fetch_all(&db)
-                            .await
-                            .unwrap_or_default();
-
-                            // Create a BatchResponse object to send
-                            let batch_response = BatchResponse {
-                                id: batch.id,
-                                completed: batch.completed,
-                                created_at: batch.created_at.to_rfc3339(),
-                                updated_at: batch.updated_at.to_rfc3339(),
-                                meta: batch.meta,
-                                account_id: batch.account_id,
-                                bets,
-                            };
-
-                            serde_json::to_string(&batch_response).ok()
-                        }
-                    }
-                    "bet_status_updated" => {
-                        let row = sqlx::query_as::<_, Bet>(
-                            "SELECT * FROM bets WHERE id = ?",
-                        )
-                        .bind(event.bet_id)
-                        .fetch_one(&db)
-                        .await
-                        .ok()?;
-                        serde_json::to_string(&row).ok()
-                    }
-
-                    _ => serde_json::to_string(&event).ok(),
-                };
-
-                payload.map(|data| {
-                    Ok(Event::default()
-                        .event(event_name)
-                        .data(data))
-                })
-            }
+            Some(Ok(Event::default()
+                .event(event_name)
+                .data(data)))
         })
-        .filter_map(|e| e);
+        .filter_map(|x| async { x });
 
-    let heartbeat = IntervalStream::new(tokio::time::interval(Duration::from_secs(10)))
-        .map(|_| {
-            Ok(Event::default()
-                .event("ping")
-                .data(chrono::Utc::now().to_rfc3339()))
-        });
-
-    let stream = tokio_stream::StreamExt::merge(event_stream, heartbeat);
-
-    Sse::new(stream).keep_alive(
+    Sse::new(event_stream).keep_alive(
         KeepAlive::new()
-            .interval(Duration::from_secs(10))
+            .interval(Duration::from_secs(15))
             .text("keep-alive"),
     )
 }
@@ -197,18 +113,9 @@ pub async fn create_account(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let event = BrokerEvent {
-        id: Some(chrono::Utc::now().timestamp_millis()),
-        pk: Some(account.id),
-        account_id: Some(account.id),
-        batch_id: None,
-        bet_id: None,
-        event: "account_created".to_string(),
-    };
-
-    if let Err(e) = state.event_sender.send(event) {
-        eprintln!("Failed to send event: {}", e);
-    }
+    let _ = state.event_sender.send(BrokerEvent::AccountCreated {
+            account: account.clone(),
+        });
 
     println!(
         "Account created - ID: {}, Name: {}, Hostname: {}",
@@ -242,18 +149,9 @@ pub async fn update_account(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let event = BrokerEvent {
-        id: Some(chrono::Utc::now().timestamp_millis()),
-        pk: Some(account.id),
-        account_id: Some(account.id),
-        batch_id: None,
-        bet_id: None,
-        event: "account_updated".to_string(),
-    };
-
-    if let Err(e) = state.event_sender.send(event) {
-        eprintln!("Failed to send event: {}", e);
-    }
+    let _ = state.event_sender.send(BrokerEvent::AccountUpdated {
+            account: account.clone(),
+        });
 
     println!(
         "Account updated - ID: {}, Name: {}, Hostname: {}",
@@ -322,18 +220,6 @@ pub async fn create_batch(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let event = BrokerEvent {
-        id: Some(chrono::Utc::now().timestamp_millis()),
-        pk: Some(batch.id),
-        account_id: Some(account_id),
-        batch_id: Some(batch.id),
-        bet_id: None,
-        event: "batch_created".to_string(),
-    };
-
-    if let Err(e) = state.event_sender.send(event) {
-        eprintln!("Failed to send event: {}", e);
-    }
 
     let response = BatchResponse {
         id: batch.id,
@@ -342,8 +228,12 @@ pub async fn create_batch(
         updated_at: batch.updated_at.to_rfc3339(),
         meta: batch.meta,
         account_id: batch.account_id,
-        bets,
+        bets: bets.clone(),
     };
+    
+    let _ = state.event_sender.send(BrokerEvent::BatchCreated {
+        batch: response.clone(),
+    });
 
     println!(
         "Batch created - ID: {}, Account: {}, Bets: {}",
@@ -447,54 +337,57 @@ pub async fn update_account_batch_bets(
         eprintln!("Transaction commit error: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-
-    let _ = state.event_sender.send(BrokerEvent {
-        id: Some(chrono::Utc::now().timestamp_millis()),
-        pk: Some(batch_id),
-        account_id: Some(account_id),
-        batch_id: Some(batch_id),
-        bet_id: None,
-        event: "batch_updated".to_string(),
+    
+    let _ = state.event_sender.send(BrokerEvent::BatchBetsUpdated {
+        batch_id,
+        account_id,
+        bets: updated_bets.clone(),
     });
 
     Ok(Json(updated_bets))
 }
 
 pub async fn update_account_batch_bet(
-    Path((account_id, batch_id, bet_id)): Path<(i64, i64, i64)>,
+    Path((batch_id, bet_id)): Path<(i64, i64)>,
     State(state): State<AppState>,
     Json(payload): Json<UpdateBetStatusRequest>,
 ) -> Result<Json<Bet>, StatusCode> {
+    let validated_status = match payload.status {
+        BetStatus::Pending => "pending",
+        BetStatus::Successful => "successful",
+        BetStatus::Failed => "failed",
+    };
+
     let updated_bet = sqlx::query_as::<_, Bet>(
         r#"
         UPDATE bets 
         SET status = ? 
-        WHERE pid = ? AND batch_id = ? 
-        RETURNING pid, id, selection, stake, cost, status, batch_id
+        WHERE pid = ? AND batch_id = ?
+        RETURNING *
         "#
     )
-    .bind(payload.status.to_string())
+    .bind(validated_status)
     .bind(bet_id)
     .bind(batch_id)
-    .fetch_one(&state.pool)
+    .fetch_optional(&state.pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to update bet: {}", e);
+        eprintln!("Database error updating bet: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let event = BrokerEvent {
-        id: Some(chrono::Utc::now().timestamp_millis()),
-        pk: Some(bet_id),
-        account_id: Some(account_id),
-        batch_id: Some(batch_id),
-        bet_id: Some(bet_id),
-        event: "bet_status_updated".to_string(),
-    };
-
-    let _ = state.event_sender.send(event);
-
-    Ok(Json(updated_bet))
+    match updated_bet {
+        Some(bet) => {
+            let _ = state.event_sender.send(BrokerEvent::BetStatusUpdated {
+                bet: bet.clone(),
+            });
+            Ok(Json(bet))
+        }
+        None => {
+            eprintln!("❌ Bet not found: pid={}, batch_id={}", bet_id, batch_id);
+            Err(StatusCode::NOT_FOUND)
+        }
+    }
 }
 
 pub async fn complete_account_batch(
@@ -518,16 +411,12 @@ pub async fn complete_account_batch(
     })?;
 
     if result.rows_affected() == 0 {
-            return Err(StatusCode::NOT_FOUND);
-        }
+        return Err(StatusCode::NOT_FOUND);
+    }
 
-    let _ = state.event_sender.send(BrokerEvent {
-        id: Some(chrono::Utc::now().timestamp_millis()),
-        pk: Some(batch_id),
-        account_id: Some(account_id),
-        batch_id: Some(batch_id),
-        bet_id: None,
-        event: "batch_completed".to_string(),
+    let _ = state.event_sender.send(BrokerEvent::BatchCompleted {
+        id: batch_id,
+        account_id,
     });
 
     Ok(())
@@ -552,20 +441,9 @@ pub async fn delete_account(
         return Err(StatusCode::NOT_FOUND);
     }
 
-    // Send account_deleted event
-    // Frontend handles cascade by clearing batches automatically
-    let event = BrokerEvent {
-        id: Some(chrono::Utc::now().timestamp_millis()),
-        pk: Some(account_id),
-        account_id: Some(account_id),
-        batch_id: None,
-        bet_id: None,
-        event: "account_deleted".to_string(),
-    };
-
-    if let Err(e) = state.event_sender.send(event) {
-        eprintln!("Failed to send event: {}", e);
-    }
+    let _ = state.event_sender.send(BrokerEvent::AccountDeleted {
+            id: account_id,
+        });
 
     println!("Account deleted - ID: {} (cascaded batches and bets)", account_id);
     Ok(StatusCode::NO_CONTENT)
