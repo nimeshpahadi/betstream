@@ -1,5 +1,5 @@
 [package]
-name = "betting-api"
+name = "betstream"
 version = "0.1.0"
 edition = "2021"
 

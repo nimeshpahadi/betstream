@@ -47,7 +47,7 @@ RUN apk add --no-cache bash curl tzdata
 WORKDIR /usr/local/bin
 
 # Copy compiled binary
-COPY --from=builder /app/target/release/betting-api ./manualbettingserver
+COPY --from=builder /app/target/release/betting-api ./betstream
 
 # Copy seed script
 COPY ./data/seed.sh /data/seed.sh
@@ -57,7 +57,7 @@ EXPOSE 3001
 
 # ---- Startup logic ----
 CMD bash -c '\
-    ./manualbettingserver & \
+    ./betstream & \
     BACKEND_PID=$!; \
     echo "⏳ Waiting for backend to start..."; \
     until curl -s http://localhost:3001/api/v1/accounts >/dev/null 2>&1; do sleep 1; done; \

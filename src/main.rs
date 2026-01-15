@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Get database URL from environment or use default SQLite file
     let database_url = env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "sqlite:./manual-betting-server.db?mode=rwc".to_string());
+        .unwrap_or_else(|_| "sqlite:./betstream.db?mode=rwc".to_string());
 
     // Create database connection pool with create_if_missing option
     let pool = SqlitePool::connect(&database_url)
