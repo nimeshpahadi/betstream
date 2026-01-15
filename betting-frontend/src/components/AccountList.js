@@ -218,16 +218,29 @@ export default function AccountBatchesUI() {
     }
   };
 
-  const handleSubmitBatch = async () => {
-    if (!selectedBatch || !accountId) return;
-    try {
-      await submitBatch(accountId, selectedBatch.id);
-      setBatches((prev) => prev.filter((b) => b.id !== selectedBatch.id));
-      setSelectedBatchId(null);
-    } catch (err) {
-      console.error("Failed to submit batch", err);
-    }
-  };
+const handleSubmitBatch = async () => {
+  if (!selectedBatch || !accountId) return;
+
+  try {
+    const removedId = selectedBatch.id;
+
+    await submitBatch(accountId, removedId);
+
+    setBatches((prev) => {
+      const remaining = prev.filter((b) => b.id !== removedId);
+
+      // If the removed batch was selected, choose another one
+      if (selectedBatchIdRef.current === removedId) {
+        const next = remaining[0]?.id || null;
+        setSelectedBatchId(next);
+      }
+
+      return remaining;
+    });
+  } catch (err) {
+    console.error("Failed to submit batch", err);
+  }
+};
 
   if (loading)
     return (
