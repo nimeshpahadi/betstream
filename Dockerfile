@@ -1,35 +1,52 @@
-# ---------- Build Stage ----------
-FROM rustlang/rust:nightly-alpine3.19 AS builder
+# =========================
+# ---------- BUILD STAGE ----------
+# =========================
+FROM rustlang/rust:nightly AS builder
 
-RUN apk add --no-cache musl-dev openssl-dev pkgconfig build-base tzdata
+# ---- Rust build optimizations for low RAM ----
+ENV CARGO_BUILD_JOBS=1
+ENV CARGO_INCREMENTAL=0
+ENV RUSTFLAGS="-C debuginfo=0"
+
+# ---- System deps ----
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    build-essential \
+    tzdata \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy manifest files
+# ---- Copy manifests only (dependency caching) ----
 COPY Cargo.toml Cargo.lock ./
 
-# Create dummy main.rs to satisfy Cargo for fetch step
+# Dummy source to allow cargo fetch
 RUN mkdir -p src && echo "fn main() {}" > src/main.rs
 
-# Fetch dependencies (cached if Cargo.toml and Cargo.lock unchanged)
+# Fetch dependencies (cached unless Cargo.toml changes)
 RUN cargo fetch
 
-# Now copy the real source code
+# ---- Copy real source ----
 COPY src ./src
-
-# Copy migrations directory (required by sqlx migrate macro)
 COPY migrations ./migrations
 
-# Build the actual release binary
-RUN cargo build --release
+# ---- Build release binary ----
+RUN cargo build --release --locked
 
-# ---------- Runtime Stage ----------
+
+# =========================
+# ---------- RUNTIME STAGE ----------
+# =========================
 FROM alpine:3.19
 
+# Runtime deps only
 RUN apk add --no-cache bash curl tzdata
 
 WORKDIR /usr/local/bin
 
+# Copy compiled binary
 COPY --from=builder /app/target/release/betting-api ./manualbettingserver
 
 # Copy seed script
@@ -38,9 +55,7 @@ RUN chmod +x /data/seed.sh
 
 EXPOSE 3001
 
-#CMD ["./manualbettingserver"]
-
-# CMD: start backend in background, wait until ready, run seed, keep backend running
+# ---- Startup logic ----
 CMD bash -c '\
     ./manualbettingserver & \
     BACKEND_PID=$!; \

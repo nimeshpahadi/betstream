@@ -1,23 +1,32 @@
-.PHONY: all build-backend build-frontend compose-up compose-down clean logs
+.PHONY: release build-backend build-frontend up down clean logs
 
-all: build-backend build-frontend
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
+
+release: build-backend build-frontend
 
 build-backend:
-	docker build -f Dockerfile -t manualbetting-backend .
+	docker build \
+		--progress=plain \
+		-f Dockerfile \
+		-t manualbetting-backend:latest .
 
 build-frontend:
-	docker build -f betting-frontend/Dockerfile -t manualbetting-frontend .
+	docker build \
+		--progress=plain \
+		-f betting-frontend/Dockerfile \
+		-t manualbetting-frontend:latest .
 
-compose-up:
-	docker-compose up -d --build
+up:
+	docker compose up -d
 
-compose-down:
-	docker-compose down
+down:
+	docker compose down
 
 clean:
-	docker-compose down -v
-	docker rmi manualbetting-backend manualbetting-frontend || true
+	docker compose down -v
+	docker rmi manualbetting-backend:latest manualbetting-frontend:latest || true
 	docker system prune -f
 
 logs:
-	docker-compose logs -f
+	docker compose logs -f
