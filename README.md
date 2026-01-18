@@ -2,6 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-1.72+-orange?logo=rust)](https://www.rust-lang.org/) 
 [![React](https://img.shields.io/badge/React-18-blue?logo=react)](https://reactjs.org/)
+[![Swagger](https://img.shields.io/badge/Swagger-OpenAPI_3.0-green?logo=swagger)](https://swagger.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 **BetStream** is a real-time betting operations platform for managing, processing, and monitoring bets through structured workflows. It is designed for operators and automated systems that require live updates and control over account-based bet batches.
@@ -19,6 +20,7 @@
   - [Bets](#bets)
 - [Real-time Events (SSE)](#real-time-events-sse)
 - [Web Interface](#web-interface)
+- [API Documentation](#api-documentation)
 - [Local Development](#local-development)
 - [Docker Setup](#docker-setup)
 - [Database Seeding](#database-seeding)
@@ -45,34 +47,36 @@ The backend stores all accounts, batches, and bets, emits events on changes, and
 
 ## Features
 
-- Account-based bet management
-- Batch processing workflow
-- Real-time updates via Server-Sent Events (SSE)
-- Interactive operator web UI
-- Manual and programmatic bet updates
-- Persistent storage with SQLite (or extendable to Postgres)
-- Dockerized development and production environment
-
-## Architecture
+- ✅ Account-based bet management
+- ✅ Batch processing workflow
+- ✅ Real-time updates via Server-Sent Events (SSE)
+- ✅ Interactive operator web UI
+- ✅ Manual and programmatic bet updates
+- ✅ **Interactive API Documentation (Swagger UI)**
+- ✅ **OpenAPI 3.0 Specification**
+- ✅ Persistent storage with SQLite (or extendable to Postgres)
+- ✅ Dockerized development and production environment
 
 ---
 
-+-----------------+ REST / SSE +------------------------+
-| | <---------------------------> | |
-| React UI | | BetStream API (Rust) |
-| (Frontend) | | + Axum / SQLx |
-| | | |
-+-----------------+ +------------------------+
-|
-v
-+----------------+
-| SQLite / Postgres |
-| Accounts, Batches |
-| Bets |
-+----------------+
+## Architecture
+```
++-----------------+   REST / SSE   +------------------------+
+|                 | <------------> |                        |
+|   React UI      |                | BetStream API (Rust)   |
+|  (Frontend)     |                |   + Axum / SQLx        |
+|                 |                |   + Swagger UI         |
++-----------------+                +------------------------+
+                                            |
+                                            v
+                                   +-------------------+
+                                   | SQLite / Postgres |
+                                   | Accounts, Batches |
+                                   |      Bets         |
+                                   +-------------------+
 
-[Nginx] → [BetStream API + Frontend]
-
+[Nginx] → [BetStream API + Frontend + Swagger]
+```
 
 ---
 
@@ -91,9 +95,9 @@ Each batch contains:
 - Status flags (active or completed)
 
 Lifecycle:
-
+```
 Created → Active → Submitted → Completed
-
+```
 
 ### Bets
 Each bet contains:
@@ -111,11 +115,13 @@ Bets can be updated manually via the UI or programmatically.
 BetStream emits events to connected clients via SSE:
 
 - `account_created`
+- `account_updated`
 - `account_deleted`
 - `batch_created`
 - `batch_completed`
 - `bet_status_updated`
-- `ping`
+- `batch_bets_updated`
+- `keep-alive` (ping)
 
 This allows:
 
@@ -138,98 +144,255 @@ The React frontend provides:
 
 ---
 
+## API Documentation
+
+BetStream includes **interactive API documentation** powered by Swagger UI.
+
+### Accessing Swagger UI
+
+**Local Development:**
+```
+http://localhost:3001/swagger-ui
+```
+
+**Docker:**
+```
+http://localhost:3001/swagger-ui
+```
+
+**Production (via Nginx):**
+```
+https://your-domain.com/swagger-ui
+```
+
+### OpenAPI Specification
+
+You can also access the raw OpenAPI JSON specification:
+```
+http://localhost:3001/api-docs/openapi.json
+```
+
+This can be imported into tools like:
+- Postman
+- Insomnia
+- API testing frameworks
+- Code generators
+
+### Using Swagger UI
+
+The Swagger UI allows you to:
+
+- 📖 Browse all available endpoints
+- 🧪 Test API calls directly from the browser
+- 📝 View request/response schemas
+- 🔍 Search and filter endpoints by tags
+- 💾 Download OpenAPI specification
+
+**Endpoint Tags:**
+- `accounts` - Account management operations
+- `batches` - Batch management operations  
+- `bets` - Bet status and update operations
+
+---
+
 ## Local Development
 
 ### Backend
-
 ```bash
 cargo run
-
+```
 
 Runs API on:
-http://localhost:3001
+- **API**: `http://localhost:3001`
+- **Swagger UI**: `http://localhost:3001/swagger-ui`
+- **Health Check**: `http://localhost:3001/health`
+
+### Frontend
+```bash
 cd betting-frontend
 npm install
 npm start
+```
+
 Runs UI on:
+```
 http://localhost:3000
+```
+
 React dev server proxies API and SSE requests to port 3001.
 
-Docker Setup
+---
+
+## Docker Setup
+```bash
 docker compose up --build
+```
 
 Services:
 
-BetStream API
+- **BetStream API** (Port 3001)
+- **Frontend** (Port 3000)
+- **Nginx** (for proxy/SSE)
 
-Frontend
+### Accessing Services
 
-Nginx (for proxy/SSE)
+After starting Docker:
 
-Database Seeding
+| Service | URL |
+|---------|-----|
+| Frontend | `http://localhost:3000` |
+| API | `http://localhost:3001` |
+| Swagger UI | `http://localhost:3001/swagger-ui` |
+| Health Check | `http://localhost:3001/health` |
+| SSE Endpoint | `http://localhost:3001/sse` |
+
+---
+
+## Database Seeding
 
 To initialize the database and create default accounts/batches:
+```bash
 ./data/seed.sh
+```
 
-API Reference
+This script will:
+- Create sample accounts
+- Generate test batches
+- Populate with example bets
 
-All API endpoints are prefixed with /api/v1/accounts, unless stated otherwise.
+---
 
-General Endpoints
+## API Reference
 
-GET / — API root (health message)
+All API endpoints are prefixed with `/api/v1`, unless stated otherwise.
 
-GET /health — Health check
+> **💡 Tip:** For interactive API testing, use [Swagger UI](http://localhost:3001/swagger-ui)
 
-Account Endpoints
+### General Endpoints
 
-GET /api/v1/accounts
-List all accounts
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/` | API root (health message) |
+| `GET` | `/health` | Health check |
+| `GET` | `/swagger-ui` | Interactive API documentation |
+| `GET` | `/api-docs/openapi.json` | OpenAPI specification |
 
-POST /api/v1/accounts
-Create a new account
+### Account Endpoints
 
-GET /api/v1/accounts/{id}
-Get account details
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/accounts` | List all accounts |
+| `POST` | `/api/v1/accounts` | Create a new account |
+| `GET` | `/api/v1/accounts/{id}` | Get account details |
+| `PUT` | `/api/v1/accounts/{id}` | Update an account |
+| `DELETE` | `/api/v1/accounts/{id}` | Delete an account |
 
-PUT /api/v1/accounts/{id}
-Update an account
+### Batch Endpoints
 
-DELETE /api/v1/accounts/{id}
-Delete an account
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/v1/accounts/{id}/batches` | Create a new batch for an account |
+| `GET` | `/api/v1/accounts/{id}/batches` | Get all batches for an account |
+| `DELETE` | `/api/v1/accounts/{id}/batches/{batch_id}` | Submit (complete) a batch |
 
-Batch Endpoints
+### Bet Endpoints
 
-POST /api/v1/accounts/{id}/batches
-Create a new batch for an account
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `PATCH` | `/api/v1/accounts/{id}/batches/{batch_id}/bets/{bet_id}` | Update a single bet status |
+| `PATCH` | `/api/v1/accounts/{id}/batches/{batch_id}/bets` | Bulk update bet statuses |
 
-GET /api/v1/accounts/{id}/batches
-Get all batches for an account
+### Server-Sent Events (SSE)
 
-DELETE /api/v1/accounts/{id}/batches/{batch_id}
-Submit (complete) a batch
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/sse` | Subscribe to real-time events |
 
-Bet Endpoints
+**Event Types:**
+- `account_created` - New account created
+- `account_updated` - Account details modified
+- `account_deleted` - Account removed
+- `batch_created` - New batch created
+- `batch_completed` - Batch submitted/completed
+- `bet_status_updated` - Single bet status changed
+- `batch_bets_updated` - Multiple bets updated
+- `keep-alive` - Connection heartbeat (every 15s)
 
-PATCH /api/v1/accounts/{id}/batches/{batch_id}/bets/{bet_id}
-Update a single bet status within a batch
+---
 
-PATCH /api/v1/accounts/{id}/batches/{batch_id}/bets
-Bulk update bet statuses within a batch
+## Production Notes
 
-Server-Sent Events (SSE)
+### Nginx Configuration
 
-GET /sse
-Subscribe to real-time events, including:
+If using Nginx as a reverse proxy, ensure proper configuration for SSE:
+```nginx
+location /sse {
+    proxy_pass http://backend:3001;
+    proxy_http_version 1.1;
+    proxy_set_header Connection '';
+    proxy_set_header X-Accel-Buffering no;
+    proxy_buffering off;
+    proxy_cache off;
+    chunked_transfer_encoding off;
+}
 
-Account created / deleted
+location /swagger-ui {
+    proxy_pass http://backend:3001;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+}
 
-Batch created / completed
+location /api-docs/ {
+    proxy_pass http://backend:3001;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+}
+```
 
-Bet status updates
+### Environment Variables
 
-Keep-alive ping events
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `sqlite:./betstream.db?mode=rwc` | Database connection string |
+| `CORS_ORIGIN` | `*` | Allowed CORS origins |
 
-License
+### Security Considerations
+
+- 🔒 Consider adding authentication for production
+- 🔒 Restrict Swagger UI access in production if needed
+- 🔒 Use HTTPS for all endpoints
+- 🔒 Configure proper CORS settings
+- 🔒 Implement rate limiting
+
+---
+
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add/update tests
+5. Update documentation (including Swagger annotations)
+6. Submit a pull request
+
+---
+
+## License
 
 MIT License © 2026 nimeshpahadi
+
+---
+
+## Quick Links
+
+- 📚 [Swagger UI](http://localhost:3001/swagger-ui) - Interactive API Documentation
+- 📄 [OpenAPI Spec](http://localhost:3001/api-docs/openapi.json) - Machine-readable API definition
+- 🔥 [Live Demo](#) - Coming soon
+- 📖 [Full Documentation](#) - Coming soon
+
+---
+
+**Made with ❤️ using Rust, Axum, React, and Swagger**
