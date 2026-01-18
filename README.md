@@ -26,7 +26,6 @@
 - [Production Notes](#production-notes)
 - [Contributing](#contributing)
 - [License](#license)
-- [Renaming from manualbettingserver](#renaming-from-manualbettingserver)
 
 ---
 
@@ -72,7 +71,7 @@ v
 | Bets |
 +----------------+
 
-[Nginx / Traefik] → [BetStream API + Frontend]
+[Nginx] → [BetStream API + Frontend]
 
 
 ---
@@ -165,7 +164,7 @@ BetStream API
 
 Frontend
 
-Nginx (optional, for proxy/SSE)
+Nginx (for proxy/SSE)
 
 Database Seeding
 
@@ -174,22 +173,62 @@ To initialize the database and create default accounts/batches:
 
 API Reference
 
-All API endpoints are prefixed with /api/v1/accounts.
+All API endpoints are prefixed with /api/v1/accounts, unless stated otherwise.
 
-Examples:
+General Endpoints
 
-GET /api/v1/accounts — List accounts
+GET / — API root (health message)
 
-GET /api/v1/accounts/{id} — Get account details
+GET /health — Health check
 
-GET /api/v1/accounts/{id}/batches — Get account batches
+Account Endpoints
 
-PATCH /api/v1/accounts/{id}/batches/{batch_id}/bets/{bet_id} — Update bet status
+GET /api/v1/accounts
+List all accounts
 
-DELETE /api/v1/accounts/{id}/batches/{batch_id} — Submit a batch
+POST /api/v1/accounts
+Create a new account
 
-SSE endpoint:
+GET /api/v1/accounts/{id}
+Get account details
+
+PUT /api/v1/accounts/{id}
+Update an account
+
+DELETE /api/v1/accounts/{id}
+Delete an account
+
+Batch Endpoints
+
+POST /api/v1/accounts/{id}/batches
+Create a new batch for an account
+
+GET /api/v1/accounts/{id}/batches
+Get all batches for an account
+
+DELETE /api/v1/accounts/{id}/batches/{batch_id}
+Submit (complete) a batch
+
+Bet Endpoints
+
+PATCH /api/v1/accounts/{id}/batches/{batch_id}/bets/{bet_id}
+Update a single bet status within a batch
+
+PATCH /api/v1/accounts/{id}/batches/{batch_id}/bets
+Bulk update bet statuses within a batch
+
+Server-Sent Events (SSE)
+
 GET /sse
+Subscribe to real-time events, including:
+
+Account created / deleted
+
+Batch created / completed
+
+Bet status updates
+
+Keep-alive ping events
 
 License
 
