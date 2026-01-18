@@ -72,6 +72,19 @@ export default function AccountBatchesUI() {
   }, [accountId]);
 
   useEffect(() => {
+    if (account?.name) {
+      document.title = account.name;
+    } else {
+      document.title = "Manual Betting Server";
+    }
+
+    // Optional cleanup when component unmounts
+    return () => {
+      document.title = "Manual Betting Server";
+    };
+  }, [account]);
+
+  useEffect(() => {
     selectedBatchIdRef.current = selectedBatchId;
   }, [selectedBatchId]);
 
