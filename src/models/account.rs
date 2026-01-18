@@ -3,9 +3,9 @@ use serde_json::Value as JsonValue;
 use sqlx::FromRow;
 use chrono::{DateTime, Utc};
 use std::str::FromStr;
+use utoipa::ToSchema;
 
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum BetStatus {
     Pending,
@@ -25,7 +25,6 @@ impl std::fmt::Display for BetStatus {
 
 impl FromStr for BetStatus {
     type Err = String;
-
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "pending" => Ok(BetStatus::Pending),
@@ -36,12 +35,12 @@ impl FromStr for BetStatus {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateBetStatusRequest {
     pub status: BetStatus,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "type")]
 pub enum BrokerEvent {
     #[serde(rename = "account_created")]
@@ -88,7 +87,7 @@ impl BrokerEvent {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
+#[derive(Debug, Serialize, Deserialize, FromRow, Clone, ToSchema)]
 pub struct Account {
     pub id: i64,
     pub name: String,
@@ -97,18 +96,18 @@ pub struct Account {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateAccountRequest {
     pub name: String,
     pub hostname: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct BetUpdateRequest {
     pub pid: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Batch {
     pub id: i64,
     pub completed: bool,
@@ -118,13 +117,13 @@ pub struct Batch {
     pub account_id: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct CreateBatchRequest {
     pub meta: JsonValue,
     pub bets: Vec<CreateBetRequest>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct CreateBetRequest {
     pub id: i64,
     pub selection: String,
@@ -132,7 +131,7 @@ pub struct CreateBetRequest {
     pub cost: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Bet {
     pub pid: i64,
     pub id: i64,
@@ -143,7 +142,7 @@ pub struct Bet {
     pub batch_id: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct BatchResponse {
     pub id: i64,
     pub completed: bool,

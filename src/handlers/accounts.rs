@@ -12,9 +12,8 @@ use futures::StreamExt;
 use sqlx::SqlitePool;
 use std::{convert::Infallible, time::Duration};
 use tokio::sync::broadcast;
-use tokio_stream::wrappers::{BroadcastStream};
+use tokio_stream::wrappers::BroadcastStream;
 use crate::models::account::*;
-
 
 // Global event broadcaster
 pub type EventSender = broadcast::Sender<BrokerEvent>;
@@ -59,7 +58,16 @@ pub async fn sse_handler(
     )
 }
 
-// GET /api/v1/accounts - Get all accounts
+/// Get all accounts
+#[utoipa::path(
+    get,
+    path = "/api/v1/accounts",
+    responses(
+        (status = 200, description = "List of accounts retrieved successfully", body = Vec<Account>),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "accounts"
+)]
 pub async fn get_accounts(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<Account>>, StatusCode> {
@@ -74,7 +82,20 @@ pub async fn get_accounts(
     Ok(Json(accounts))
 }
 
-// GET /api/v1/accounts/:id - Get account by ID
+/// Get account by ID
+#[utoipa::path(
+    get,
+    path = "/api/v1/accounts/{id}",
+    params(
+        ("id" = i64, Path, description = "Account ID")
+    ),
+    responses(
+        (status = 200, description = "Account found", body = Account),
+        (status = 404, description = "Account not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "accounts"
+)]
 pub async fn get_account(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -91,7 +112,18 @@ pub async fn get_account(
     Ok(Json(account))
 }
 
-// Create account with event publishing
+/// Create a new account
+#[utoipa::path(
+    post,
+    path = "/api/v1/accounts",
+    request_body = CreateAccountRequest,
+    responses(
+        (status = 200, description = "Account created successfully", body = Account),
+        (status = 400, description = "Bad request"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "accounts"
+)]
 pub async fn create_account(
     State(state): State<AppState>,
     JsonExtract(payload): JsonExtract<CreateAccountRequest>,
@@ -124,7 +156,21 @@ pub async fn create_account(
     Ok(Json(account))
 }
 
-// Update account implementation
+/// Update an existing account
+#[utoipa::path(
+    put,
+    path = "/api/v1/accounts/{id}",
+    params(
+        ("id" = i64, Path, description = "Account ID")
+    ),
+    request_body = CreateAccountRequest,
+    responses(
+        (status = 200, description = "Account updated successfully", body = Account),
+        (status = 404, description = "Account not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "accounts"
+)]
 pub async fn update_account(
     State(state): State<AppState>,
     Path(account_id): Path<i64>,
@@ -160,6 +206,22 @@ pub async fn update_account(
     Ok(Json(account))
 }
 
+/// Create a new batch for an account
+#[utoipa::path(
+    post,
+    path = "/api/v1/accounts/{id}/batches",
+    params(
+        ("id" = i64, Path, description = "Account ID")
+    ),
+    request_body = CreateBatchRequest,
+    responses(
+        (status = 200, description = "Batch created successfully", body = BatchResponse),
+        (status = 400, description = "Bad request"),
+        (status = 404, description = "Account not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "batches"
+)]
 pub async fn create_batch(
     Path(account_id): Path<i64>,
     State(state): State<AppState>,
@@ -242,6 +304,20 @@ pub async fn create_batch(
     Ok(Json(response))
 }
 
+/// Get all batches for an account
+#[utoipa::path(
+    get,
+    path = "/api/v1/accounts/{id}/batches",
+    params(
+        ("id" = i64, Path, description = "Account ID")
+    ),
+    responses(
+        (status = 200, description = "List of batches retrieved successfully", body = Vec<BatchResponse>),
+        (status = 404, description = "Account not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "batches"
+)]
 pub async fn account_batches(
     Path(account_id): Path<i64>,
     State(state): State<AppState>,
@@ -301,6 +377,22 @@ pub async fn account_batches(
     Ok(Json(batch_responses))
 }
 
+/// Update multiple bets in a batch
+#[utoipa::path(
+    patch,
+    path = "/api/v1/accounts/{id}/batches/{batch_id}/bets",
+    params(
+        ("id" = i64, Path, description = "Account ID"),
+        ("batch_id" = i64, Path, description = "Batch ID")
+    ),
+    request_body = Vec<BetUpdateRequest>,
+    responses(
+        (status = 200, description = "Bets updated successfully", body = Vec<Bet>),
+        (status = 404, description = "Batch not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "bets"
+)]
 pub async fn update_account_batch_bets(
     Path((account_id, batch_id)): Path<(i64, i64)>,
     State(state): State<AppState>,
@@ -346,6 +438,23 @@ pub async fn update_account_batch_bets(
     Ok(Json(updated_bets))
 }
 
+/// Update a single bet status
+#[utoipa::path(
+    patch,
+    path = "/api/v1/accounts/{id}/batches/{batch_id}/bets/{bet_id}",
+    params(
+        ("id" = i64, Path, description = "Account ID"),
+        ("batch_id" = i64, Path, description = "Batch ID"),
+        ("bet_id" = i64, Path, description = "Bet ID (pid)")
+    ),
+    request_body = UpdateBetStatusRequest,
+    responses(
+        (status = 200, description = "Bet status updated successfully", body = Bet),
+        (status = 404, description = "Bet not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "bets"
+)]
 pub async fn update_account_batch_bet(
     Path((account_id, batch_id, bet_id)): Path<(i64, i64, i64)>,
     State(state): State<AppState>,
@@ -389,6 +498,21 @@ pub async fn update_account_batch_bet(
     }
 }
 
+/// Complete a batch
+#[utoipa::path(
+    delete,
+    path = "/api/v1/accounts/{id}/batches/{batch_id}",
+    params(
+        ("id" = i64, Path, description = "Account ID"),
+        ("batch_id" = i64, Path, description = "Batch ID")
+    ),
+    responses(
+        (status = 200, description = "Batch completed successfully"),
+        (status = 404, description = "Batch not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "batches"
+)]
 pub async fn complete_account_batch(
     State(state): State<AppState>,
     Path((account_id, batch_id)): Path<(i64, i64)>,
@@ -421,6 +545,20 @@ pub async fn complete_account_batch(
     Ok(())
 }
 
+/// Delete an account
+#[utoipa::path(
+    delete,
+    path = "/api/v1/accounts/{id}",
+    params(
+        ("id" = i64, Path, description = "Account ID")
+    ),
+    responses(
+        (status = 204, description = "Account deleted successfully"),
+        (status = 404, description = "Account not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "accounts"
+)]
 pub async fn delete_account(
     State(state): State<AppState>,
     Path(account_id): Path<i64>,
